@@ -1,25 +1,33 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
 import '../models/supplier_model.dart';
+import 'firebase_service.dart';
 
 class SupplierService {
-  final SupabaseClient _supabase;
-
-  SupplierService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final Uuid _uuid = const Uuid();
 
   Future<List<SupplierModel>> getSuppliers({bool onlyActive = true}) async {
-    var query = _supabase.from('suppliers').select();
-    if (onlyActive) {
-      query = query.eq('is_active', true);
+    final data = await _firebase.get('suppliers');
+    if (data == null || data is! Map) return [];
+
+    final list = <SupplierModel>[];
+    for (final entry in data.entries) {
+      if (entry.value is Map) {
+        final supplier = SupplierModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+        if (!onlyActive || supplier.isActive) {
+          list.add(supplier);
+        }
+      }
     }
-    final response = await query.order('name');
-    return (response as List).map((json) => SupplierModel.fromJson(json)).toList();
+
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
   }
 
   Future<SupplierModel?> getSupplierById(String id) async {
-    final response = await _supabase.from('suppliers').select().eq('id', id).maybeSingle();
-    if (response == null) return null;
-    return SupplierModel.fromJson(response);
+    final data = await _firebase.get('suppliers/$id');
+    if (data == null || data is! Map) return null;
+    return SupplierModel.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<SupplierModel> createSupplier({
@@ -30,20 +38,22 @@ class SupplierService {
     String? address,
     String? contactPerson,
   }) async {
-    final response = await _supabase
-        .from('suppliers')
-        .insert({
-          'name': name,
-          'code': code,
-          'phone': phone,
-          'email': email,
-          'address': address,
-          'contact_person': contactPerson,
-          'is_active': true,
-        })
-        .select()
-        .single();
-    return SupplierModel.fromJson(response);
+    final id = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    final supplier = SupplierModel(
+      id: id,
+      name: name,
+      code: code,
+      phone: phone,
+      email: email,
+      address: address,
+      contactPerson: contactPerson,
+      isActive: true,
+      createdAt: DateTime.parse(now),
+    );
+
+    await _firebase.put('suppliers/$id', supplier.toJson());
+    return supplier;
   }
 
   Future<SupplierModel> updateSupplier({
@@ -67,11 +77,15 @@ class SupplierService {
     if (contactPerson != null) updates['contact_person'] = contactPerson;
     if (isActive != null) updates['is_active'] = isActive;
 
-    final response = await _supabase.from('suppliers').update(updates).eq('id', id).select().single();
-    return SupplierModel.fromJson(response);
+    await _firebase.patch('suppliers/$id', updates);
+    final updated = await getSupplierById(id);
+    return updated!;
   }
 
   Future<void> deleteSupplier(String id) async {
-    await _supabase.from('suppliers').delete().eq('id', id);
+    await _firebase.patch('suppliers/$id', {
+      'is_active': false,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
   }
 }

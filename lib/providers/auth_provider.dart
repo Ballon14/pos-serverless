@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 
@@ -7,7 +6,7 @@ final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();
 });
 
-final authStateStreamProvider = StreamProvider<AuthState>((ref) {
+final authStateStreamProvider = StreamProvider<UserModel?>((ref) {
   final authService = ref.watch(authServiceProvider);
   return authService.onAuthStateChange;
 });
@@ -16,11 +15,7 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
   @override
   Future<UserModel?> build() async {
     final authService = ref.watch(authServiceProvider);
-    final user = authService.currentAuthUser;
-    if (user != null) {
-      return authService.getUserProfile(user.id);
-    }
-    return null;
+    return authService.currentUser;
   }
 
   Future<void> login(String email, String password) async {

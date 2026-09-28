@@ -1,28 +1,31 @@
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
 import '../models/attendance_model.dart';
 import '../models/leave_request_model.dart';
+import '../models/user_model.dart';
+import 'firebase_service.dart';
 
 class AttendanceService {
-  final SupabaseClient _supabase;
-
-  AttendanceService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final Uuid _uuid = const Uuid();
 
   String get _todayDateString => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
   /// Get attendance record for a user today (WIB)
   Future<AttendanceModel?> getTodayAttendance(String userId) async {
     final today = _todayDateString;
-    final response = await _supabase
-        .from('attendances')
-        .select('*, users(*)')
-        .eq('user_id', userId)
-        .eq('tanggal', today)
-        .maybeSingle();
+    final data = await _firebase.get('attendances');
+    if (data == null || data is! Map) return null;
 
-    if (response == null) return null;
-    return AttendanceModel.fromJson(response);
+    for (final entry in data.entries) {
+      if (entry.value is Map) {
+        final map = Map<String, dynamic>.from(entry.value as Map);
+        if (map['user_id'] == userId && map['tanggal'] == today) {
+          return AttendanceModel.fromJson(map);
+        }
+      }
+    }
+    return null;
   }
 
   /// Clock in for today
@@ -33,25 +36,25 @@ class AttendanceService {
     final today = _todayDateString;
     final now = DateTime.now();
 
-    // Check if already clocked in today
     final existing = await getTodayAttendance(userId);
     if (existing != null && existing.isClockedIn) {
       throw Exception('Anda sudah melakukan Clock In hari ini.');
     }
 
-    final response = await _supabase
-        .from('attendances')
-        .insert({
-          'user_id': userId,
-          'tanggal': today,
-          'clock_in': now.toIso8601String(),
-          'status': 'hadir',
-          'keterangan': note,
-        })
-        .select('*, users(*)')
-        .single();
+    final id = _uuid.v4();
+    final attendance = AttendanceModel(
+      id: id,
+      userId: userId,
+      tanggal: today,
+      clockIn: now,
+      status: 'hadir',
+      keterangan: note,
+      createdAt: now,
+      updatedAt: now,
+    );
 
-    return AttendanceModel.fromJson(response);
+    await _firebase.put('attendances/$id', attendance.toJson());
+    return attendance;
   }
 
   /// Clock out for today
@@ -60,7 +63,6 @@ class AttendanceService {
     String? note,
   }) async {
     final now = DateTime.now();
-
     final updates = <String, dynamic>{
       'clock_out': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
@@ -69,14 +71,9 @@ class AttendanceService {
       updates['keterangan'] = note;
     }
 
-    final response = await _supabase
-        .from('attendances')
-        .update(updates)
-        .eq('id', attendanceId)
-        .select('*, users(*)')
-        .single();
-
-    return AttendanceModel.fromJson(response);
+    await _firebase.patch('attendances/$attendanceId', updates);
+    final data = await _firebase.get('attendances/$attendanceId');
+    return AttendanceModel.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
   /// Get list of attendances with filters
@@ -86,78 +83,117 @@ class AttendanceService {
     String? endDate,
     int limit = 100,
   }) async {
-    var query = _supabase.from('attendances').select('*, users(*)');
+    final data = await _firebase.get('attendances');
+    if (data == null || data is! Map) return [];
 
-    if (userId != null && userId.isNotEmpty) {
-      query = query.eq('user_id', userId);
-    }
-    if (startDate != null && startDate.isNotEmpty) {
-      query = query.gte('tanggal', startDate);
-    }
-    if (endDate != null && endDate.isNotEmpty) {
-      query = query.lte('tanggal', endDate);
+    final usersData = await _firebase.get('users');
+    final usersMap = <String, UserModel>{};
+    if (usersData != null && usersData is Map) {
+      for (final e in usersData.entries) {
+        if (e.value is Map) {
+          usersMap[e.key.toString()] = UserModel.fromJson(Map<String, dynamic>.from(e.value as Map));
+        }
+      }
     }
 
-    final response = await query.order('tanggal', ascending: false).limit(limit);
-    return (response as List).map((json) => AttendanceModel.fromJson(json)).toList();
+    final list = <AttendanceModel>[];
+    for (final entry in data.entries) {
+      if (entry.value is Map) {
+        final a = AttendanceModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+
+        if (userId != null && userId.isNotEmpty && a.userId != userId) {
+          continue;
+        }
+        if (startDate != null && startDate.isNotEmpty && a.tanggal.compareTo(startDate) < 0) {
+          continue;
+        }
+        if (endDate != null && endDate.isNotEmpty && a.tanggal.compareTo(endDate) > 0) {
+          continue;
+        }
+
+        final user = usersMap[a.userId];
+        list.add(AttendanceModel(
+          id: a.id,
+          userId: a.userId,
+          tanggal: a.tanggal,
+          clockIn: a.clockIn,
+          clockOut: a.clockOut,
+          status: a.status,
+          keterangan: a.keterangan,
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+          user: user,
+        ));
+      }
+    }
+
+    list.sort((a, b) => b.tanggal.compareTo(a.tanggal));
+    return list.take(limit).toList();
   }
 
   /// Submit leave / permission / sick request
   Future<LeaveRequestModel> submitLeaveRequest({
     required String userId,
-    required String type, // 'izin' | 'sakit' | 'cuti'
+    required String type,
     required String startDate,
     required String endDate,
     required String reason,
   }) async {
-    final response = await _supabase
-        .from('leave_requests')
-        .insert({
-          'user_id': userId,
-          'tipe': type,
-          'tanggal_mulai': startDate,
-          'tanggal_selesai': endDate,
-          'alasan': reason,
-          'status': 'pending',
-        })
-        .select('*, users(*)')
-        .single();
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final request = LeaveRequestModel(
+      id: id,
+      userId: userId,
+      tipe: type,
+      tanggalMulai: startDate,
+      tanggalSelesai: endDate,
+      alasan: reason,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    );
 
-    return LeaveRequestModel.fromJson(response);
+    await _firebase.put('leave_requests/$id', request.toJson());
+    return request;
   }
 
   /// Get list of leave requests
   Future<List<LeaveRequestModel>> getLeaveRequests({String? userId, String? status}) async {
-    var query = _supabase.from('leave_requests').select('*, users(*)');
+    final data = await _firebase.get('leave_requests');
+    if (data == null || data is! Map) return [];
 
-    if (userId != null && userId.isNotEmpty) {
-      query = query.eq('user_id', userId);
-    }
-    if (status != null && status.isNotEmpty && status != 'all') {
-      query = query.eq('status', status);
+    final list = <LeaveRequestModel>[];
+    for (final entry in data.entries) {
+      if (entry.value is Map) {
+        final r = LeaveRequestModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+        if (userId != null && userId.isNotEmpty && r.userId != userId) continue;
+        if (status != null && status.isNotEmpty && status != 'all' && r.status != status) continue;
+        list.add(r);
+      }
     }
 
-    final response = await query.order('created_at', ascending: false);
-    return (response as List).map((json) => LeaveRequestModel.fromJson(json)).toList();
+    list.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return list;
   }
 
   /// Approve or reject leave request
   Future<LeaveRequestModel> updateLeaveStatus({
     required String requestId,
-    required String status, // 'approved' | 'rejected'
+    required String status,
     required String approvedByUserId,
   }) async {
-    final response = await _supabase
-        .from('leave_requests')
-        .update({
-          'status': status,
-          'approved_by': approvedByUserId,
-          'updated_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', requestId)
-        .select('*, users(*)')
-        .single();
+    final now = DateTime.now().toIso8601String();
+    await _firebase.patch('leave_requests/$requestId', {
+      'status': status,
+      'approved_by': approvedByUserId,
+      'updated_at': now,
+    });
 
-    return LeaveRequestModel.fromJson(response);
+    final data = await _firebase.get('leave_requests/$requestId');
+    return LeaveRequestModel.fromJson(Map<String, dynamic>.from(data as Map));
   }
 }

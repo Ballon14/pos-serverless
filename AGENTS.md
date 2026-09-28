@@ -3,7 +3,7 @@
 This file contains the core context, technology stack, and architectural guidelines for AI coding agents contributing to the **StockKu** repository.
 
 ## 🎯 Project Overview
-StockKu is a modern, responsive multi-platform Point of Sale (POS) and Inventory Management System built with **Flutter** (Web, Android, iOS) and powered by **Supabase** (Database, Auth, Storage, Realtime, and Edge Functions). It is designed to be visually premium, fast, and serverless-first — running entirely on client devices and edge infrastructure with zero self-hosted servers.
+StockKu is a modern, responsive multi-platform Point of Sale (POS) and Inventory Management System built with **Flutter** (Web, Android, iOS) and powered by **Firebase Realtime Database** (`https://possystem-6b4b7-default-rtdb.asia-southeast1.firebasedatabase.app/`). It is designed to be visually premium, fast, and serverless-first — running entirely on client devices and edge infrastructure with zero self-hosted servers.
 
 **Key Features:**
 - **POS / Kasir**: Real-time cart management via Riverpod, barcode scanner support (physical scanner for Web / camera scanner for Mobile via `mobile_scanner`), offline fallback with local storage (Hive) sync.
@@ -16,28 +16,24 @@ StockKu is a modern, responsive multi-platform Point of Sale (POS) and Inventory
 
 ### Frontend / Client App (`lib/`)
 - **Framework**: Flutter 3.x (Dart 3.x) targeting Web, Android, and iOS
-- **State Management**: Flutter Riverpod 2.x (`flutter_riverpod`, `riverpod_annotation`, `riverpod_generator`)
+- **State Management**: Flutter Riverpod (`flutter_riverpod`)
 - **Routing**: GoRouter (`go_router`) with auth & attendance redirect guards
-- **Data Modeling**: `freezed` & `json_serializable` for immutable, type-safe data classes
+- **Data Modeling**: Type-safe Dart data models with JSON serialization
 - **UI & Styling**: Material 3 with custom curated color palette (Indigo / Purple / Slate / Emerald), Google Fonts (`google_fonts`), Shimmer loading, responsive breakpoints
 - **Charts**: `fl_chart` for interactive financial & sales charts
 - **Barcode Scanning**: Physical keyboard/scanner input for Web/Desktop, `mobile_scanner` for mobile camera
-- **Offline & Local Cache**: `hive_flutter` for cart persistence & offline queue, `connectivity_plus` for network detection
+- **Offline & Local Cache**: `hive_flutter` for session persistence, cart persistence & offline queue, `connectivity_plus` for network detection
 - **Printing & Export**: `pdf` & `printing` for thermal receipt & reports, `excel` for spreadsheet export
 
-### Backend & Infrastructure (`supabase/`)
-- **Database**: Supabase (PostgreSQL 15, managed) with Row Level Security (RLS)
-- **Authentication**: Supabase Auth (managed via `supabase_flutter`)
-- **Direct Queries**: `supabase.from('...')` for read & standard CRUD operations guarded by Postgres RLS
-- **Edge Functions (`supabase/functions/`)**: Deno / TypeScript for critical atomic transactions:
-  - `checkout`: Stock validation with `SELECT ... FOR UPDATE`, invoice generation (`INV-YYYYMMDD-XXXX`), sale record, and stock deduction.
-  - `process-return`: Return item capping, stock restoration, and mutation logging.
-  - `generate-report`: Heavy analytical queries (if needed beyond client capacity).
-- **File Storage**: Supabase Storage (receipts, avatars, product images)
-- **Realtime**: Supabase Realtime (stock update notifications, sales broadcasts)
+### Backend & Infrastructure (`Firebase Realtime Database`)
+- **Database**: Firebase Realtime Database (RTDB) via REST API (`https://possystem-6b4b7-default-rtdb.asia-southeast1.firebasedatabase.app/`)
+- **Client**: `FirebaseService` (`lib/services/firebase_service.dart`) utilizing lightweight pure Dart `http` calls (portable across Web, Android, iOS without heavy native SDK configuration files)
+- **Authentication**: Local/Firebase-backed user authentication with salted session caching in Hive (`sessionBoxName`)
+- **Auto-Seeding**: Automatic catalog, category, supplier, default users (`admin@tokombaemi.com`, `kasir1@tokombaemi.com`), and store settings seeding on startup if database is empty
+- **Direct Queries**: Pure REST endpoints (`/users`, `/products`, `/categories`, `/suppliers`, `/sales`, `/stock_movements`, `/attendances`, `/leave_requests`)
 
 ## 🧱 Data Integrity Rules (MUST follow)
-- **Critical operations go through Supabase Edge Functions**: Checkout and return processing MUST execute in server-side transactions with row locking (`SELECT ... FOR UPDATE`). Never perform raw stock decrement directly from client-side code.
+- **Atomic Operations & Invoice Generation**: Checkout generates unique invoice sequence (`INV-YYYYMMDD-XXXX`), deducts stock in real-time, records `stock_movements`, and commits `/sales` transaction record.
 - **Stock deduction rules**: Stock must never fall below zero for outgoing operations. Stock movements (`stock_movements`) must always be recorded for every change.
 - **Returns are capped**: `sale_items.returned_qty` tracks cumulative returns; over-returns must be rejected.
 - **Money validation**: Discounts clamped to `[0, subtotal]`, subtotal cannot be negative, payment (`bayar`) must be `>= grand_total`.
@@ -57,27 +53,30 @@ StockKu is a modern, responsive multi-platform Point of Sale (POS) and Inventory
 ```
 lib/
 ├── app.dart                   # MaterialApp.router configuration
-├── main.dart                  # Supabase & Hive initialization, ProviderScope entry
+├── main.dart                  # Hive initialization, Firebase auto-seed, ProviderScope entry
 ├── config/
-│   ├── constants.dart         # App-wide constants, strings, endpoints
+│   ├── constants.dart         # Firebase RTDB endpoint, Hive box names, app strings
 │   ├── router.dart            # GoRouter configuration & route guards
-│   ├── supabase_config.dart   # Supabase client config & credentials
 │   └── theme.dart             # Material 3 custom dark/light theme
-├── models/                    # Freezed data models matching database schema
-│   ├── attendance.dart
-│   ├── category.dart
-│   ├── product.dart
-│   ├── sale.dart
-│   ├── stock_movement.dart
-│   ├── supplier.dart
-│   └── user.dart
-├── services/                  # Supabase SDK service wrappers & Edge Function calls
+├── models/                    # Data models with JSON serialization
+│   ├── attendance_model.dart
+│   ├── category_model.dart
+│   ├── leave_request_model.dart
+│   ├── product_model.dart
+│   ├── sale_model.dart
+│   ├── stock_movement_model.dart
+│   ├── supplier_model.dart
+│   └── user_model.dart
+├── services/                  # Firebase RTDB REST client & service wrappers
+│   ├── firebase_service.dart  # Core HTTP client with auto-seeder
 │   ├── attendance_service.dart
 │   ├── auth_service.dart
+│   ├── category_service.dart
 │   ├── product_service.dart
 │   ├── report_service.dart
 │   ├── sale_service.dart
-│   └── stock_service.dart
+│   ├── stock_service.dart
+│   └── supplier_service.dart
 ├── providers/                 # Riverpod notifiers & state management
 │   ├── attendance_provider.dart
 │   ├── auth_provider.dart
@@ -105,10 +104,10 @@ lib/
 ```
 
 ### 2. Riverpod State Management
-- Use `flutter_riverpod` with code generation (`@riverpod`) where appropriate, or standard `Notifier` / `AsyncNotifier`.
+- Use `flutter_riverpod` standard `Notifier` / `AsyncNotifier`.
 - Keep business logic in Notifiers/Services, keeping widgets declarative and clean.
 - Handle `AsyncValue` cleanly with `.when(data: ..., loading: ..., error: ...)` and shimmer loaders.
-- Cart state is saved locally with `Hive` so items survive accidental refresh or offline state.
+- Cart and session state are saved locally with `Hive` so items survive accidental refresh or offline state.
 
 ### 3. UI / UX & Design Standards
 - Premium, modern aesthetic matching StockKu branding:
@@ -120,11 +119,11 @@ lib/
 - Responsive layout: adapt between desktop/tablet sidebars and mobile bottom navigation or drawers.
 - Barcode scanning: instant keystroke capture on desktop/web, dedicated camera scanner modal on mobile.
 
-### 4. Database & RLS Conventions
-- Supabase table names are lowercase plural: `products`, `sales`, `sale_items`, `users`, `attendances`.
-- Primary keys are UUIDs (`gen_random_uuid()`).
-- All financial numbers use `NUMERIC(15,2)` or integer cents.
-- Dates use `TIMESTAMPTZ`.
+### 4. Database & Firebase RTDB Conventions
+- Firebase RTDB paths are lowercase plural: `/products`, `/categories`, `/suppliers`, `/sales`, `/stock_movements`, `/users`, `/attendances`, `/leave_requests`.
+- Primary keys are UUIDs (`Uuid().v4()`).
+- All financial numbers use standard numeric double/int representations.
+- Dates use ISO 8601 strings (`toIso8601String()`).
 
 ## 🔄 Development Workflow (MUST follow, point by point)
 1. **Understand the task** — read relevant Flutter models, services, and screen files first.

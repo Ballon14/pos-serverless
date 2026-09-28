@@ -1,11 +1,11 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
+import '../models/category_model.dart';
 import '../models/product_model.dart';
+import 'firebase_service.dart';
 
 class ProductService {
-  final SupabaseClient _supabase;
-
-  ProductService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final Uuid _uuid = const Uuid();
 
   Future<List<ProductModel>> getProducts({
     String? search,
@@ -14,80 +14,110 @@ class ProductService {
     int limit = 100,
     int offset = 0,
   }) async {
-    var query = _supabase.from('products').select('*, categories(*)');
+    final productsData = await _firebase.get('products');
+    if (productsData == null || productsData is! Map) return [];
 
-    if (onlyActive) {
-      query = query.eq('is_active', true);
+    final categoriesData = await _firebase.get('categories');
+    final Map<String, CategoryModel> categoriesMap = {};
+    if (categoriesData != null && categoriesData is Map) {
+      for (final entry in categoriesData.entries) {
+        if (entry.value is Map) {
+          categoriesMap[entry.key.toString()] =
+              CategoryModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+        }
+      }
     }
 
-    if (categoryId != null && categoryId.isNotEmpty && categoryId != 'all') {
-      query = query.eq('category_id', categoryId);
+    final list = <ProductModel>[];
+    final cleanSearch = search?.trim().toLowerCase();
+
+    for (final entry in productsData.entries) {
+      if (entry.value is Map) {
+        final map = Map<String, dynamic>.from(entry.value as Map);
+        final p = ProductModel.fromJson(map);
+
+        if (onlyActive && !p.isActive) continue;
+
+        if (categoryId != null && categoryId.isNotEmpty && categoryId != 'all') {
+          if (p.categoryId != categoryId) continue;
+        }
+
+        if (cleanSearch != null && cleanSearch.isNotEmpty) {
+          final matchName = p.name.toLowerCase().contains(cleanSearch);
+          final matchSku = p.sku.toLowerCase().contains(cleanSearch);
+          if (!matchName && !matchSku) continue;
+        }
+
+        final category = categoriesMap[p.categoryId];
+        list.add(p.copyWith(category: category));
+      }
     }
 
-    if (search != null && search.trim().isNotEmpty) {
-      query = query.or('name.ilike.%${search.trim()}%,sku.ilike.%${search.trim()}%');
-    }
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    final response = await query.order('name').range(offset, offset + limit - 1);
-    return (response as List).map((json) => ProductModel.fromJson(json)).toList();
+    if (offset >= list.length) return [];
+    final endIndex = (offset + limit).clamp(0, list.length);
+    return list.sublist(offset, endIndex);
   }
 
   Future<ProductModel?> getProductById(String id) async {
-    final response = await _supabase.from('products').select('*, categories(*)').eq('id', id).maybeSingle();
-    if (response == null) return null;
-    return ProductModel.fromJson(response);
+    final data = await _firebase.get('products/$id');
+    if (data == null || data is! Map) return null;
+    final p = ProductModel.fromJson(Map<String, dynamic>.from(data));
+
+    final catData = await _firebase.get('categories/${p.categoryId}');
+    if (catData != null && catData is Map) {
+      return p.copyWith(category: CategoryModel.fromJson(Map<String, dynamic>.from(catData)));
+    }
+    return p;
   }
 
   Future<ProductModel?> getProductBySku(String sku) async {
-    final response = await _supabase
-        .from('products')
-        .select('*, categories(*)')
-        .eq('sku', sku.trim())
-        .eq('is_active', true)
-        .maybeSingle();
-    if (response == null) return null;
-    return ProductModel.fromJson(response);
+    final productsData = await _firebase.get('products');
+    if (productsData == null || productsData is! Map) return null;
+
+    final cleanSku = sku.trim().toLowerCase();
+    for (final entry in productsData.entries) {
+      if (entry.value is Map) {
+        final p = ProductModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+        if (p.isActive && p.sku.toLowerCase() == cleanSku) {
+          return p;
+        }
+      }
+    }
+    return null;
   }
 
   Future<List<ProductModel>> getLowStockProducts() async {
-    // Products where stok <= min_stok
-    final response = await _supabase
-        .from('products')
-        .select('*, categories(*)')
-        .eq('is_active', true)
-        .order('stok')
-        .limit(20);
-
-    return (response as List)
-        .map((json) => ProductModel.fromJson(json))
-        .where((p) => p.isLowStock)
-        .toList();
+    final all = await getProducts(onlyActive: true, limit: 1000);
+    final lowStock = all.where((p) => p.isLowStock).toList();
+    lowStock.sort((a, b) => a.stok.compareTo(b.stok));
+    return lowStock;
   }
 
   Future<ProductModel> createProduct(ProductModel product) async {
-    final data = product.toJson();
-    data.remove('id'); // let Postgres generate UUID
-    final response = await _supabase.from('products').insert(data).select('*, categories(*)').single();
-    return ProductModel.fromJson(response);
+    final id = product.id.isNotEmpty ? product.id : _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    final toSave = product.copyWith(
+      id: id,
+      createdAt: DateTime.parse(now),
+    );
+
+    await _firebase.put('products/$id', toSave.toJson());
+    return toSave;
   }
 
   Future<ProductModel> updateProduct(ProductModel product) async {
-    final data = product.toJson();
-    data['updated_at'] = DateTime.now().toIso8601String();
-    final response = await _supabase
-        .from('products')
-        .update(data)
-        .eq('id', product.id)
-        .select('*, categories(*)')
-        .single();
-    return ProductModel.fromJson(response);
+    final now = DateTime.now().toIso8601String();
+    final toSave = product.copyWith(updatedAt: DateTime.parse(now));
+    await _firebase.put('products/${product.id}', toSave.toJson());
+    return toSave;
   }
 
   Future<void> deleteProduct(String id) async {
-    // Soft-delete or hard delete
-    await _supabase.from('products').update({
+    await _firebase.patch('products/$id', {
       'is_active': false,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
+    });
   }
 }

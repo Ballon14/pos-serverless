@@ -300,7 +300,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             Icon(Icons.verified_user_rounded, size: 14, color: AppColors.primary),
                             SizedBox(width: 6),
                             Text(
-                              'Terlindungi dengan Supabase Auth & JWT',
+                              'Terlindungi dengan Firebase Realtime Database',
                               style: TextStyle(fontSize: 11, color: AppColors.darkTextSecondary),
                             ),
                           ],

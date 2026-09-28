@@ -1,19 +1,19 @@
-# 🦋 StockKu — Migration Plan: Flutter + Supabase Direct
+# 🦋 StockKu — Migration Plan: Flutter + Firebase Realtime Database
 
 ## Ringkasan Perubahan
 
 | Aspek | Sebelum | Sesudah |
 |---|---|---|
 | **Frontend** | React 19 + Vite 6 (SPA) | Flutter 3.x (Web + Android + iOS) |
-| **Backend API** | Hono.js v4 on Cloudflare Workers | ❌ Dihapus — diganti Supabase Edge Functions |
-| **State Management** | Zustand + TanStack Query | Riverpod 2.x + supabase_flutter |
+| **Backend / Database** | Hono.js v4 / Supabase | Firebase Realtime Database (REST API) |
+| **Database Endpoint** | `bnkndcxmiyhcmapvusbx.supabase.co` | `https://possystem-6b4b7-default-rtdb.asia-southeast1.firebasedatabase.app/` |
+| **State Management** | Zustand + TanStack Query | Flutter Riverpod (`flutter_riverpod`) |
 | **Styling** | Tailwind CSS v4 | Flutter Material 3 + Custom Theme |
-| **Auth** | Supabase Auth via Hono middleware | supabase_flutter langsung |
-| **Shared Types** | `@stockku/shared` (TypeScript) | `lib/models/` (Dart classes + Freezed) |
-| **Critical Logic** | Hono service layer (stock, invoice) | Supabase Edge Functions (Deno) |
-| **Offline/PWA** | vite-plugin-pwa + IndexedDB | Hive/sqflite + connectivity_plus |
-| **Monorepo** | pnpm + Turborepo | Single Flutter project |
-| **Hosting** | Cloudflare Pages (SPA) + Workers (API) | Firebase Hosting / Cloudflare Pages (Web build) + Play Store / App Store |
+| **Auth & Session** | Supabase Auth | Firebase RTDB `/users` + Hive local encrypted session |
+| **Shared Types** | `@stockku/shared` (TypeScript) | `lib/models/` (Dart data models) |
+| **Critical Logic** | Hono service layer | `lib/services/` (atomic invoice generation, stock deduction) |
+| **Offline/PWA** | vite-plugin-pwa + IndexedDB | Hive (`hive_flutter`) + connectivity_plus |
+| **Monorepo** | pnpm + Turborepo | Single Flutter multi-platform project |
 
 ---
 

@@ -1,25 +1,33 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
 import '../models/category_model.dart';
+import 'firebase_service.dart';
 
 class CategoryService {
-  final SupabaseClient _supabase;
-
-  CategoryService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final Uuid _uuid = const Uuid();
 
   Future<List<CategoryModel>> getCategories({bool onlyActive = true}) async {
-    var query = _supabase.from('categories').select();
-    if (onlyActive) {
-      query = query.eq('is_active', true);
+    final data = await _firebase.get('categories');
+    if (data == null || data is! Map) return [];
+
+    final list = <CategoryModel>[];
+    for (final entry in data.entries) {
+      if (entry.value is Map) {
+        final cat = CategoryModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+        if (!onlyActive || cat.isActive) {
+          list.add(cat);
+        }
+      }
     }
-    final response = await query.order('name');
-    return (response as List).map((json) => CategoryModel.fromJson(json)).toList();
+
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
   }
 
   Future<CategoryModel?> getCategoryById(String id) async {
-    final response = await _supabase.from('categories').select().eq('id', id).maybeSingle();
-    if (response == null) return null;
-    return CategoryModel.fromJson(response);
+    final data = await _firebase.get('categories/$id');
+    if (data == null || data is! Map) return null;
+    return CategoryModel.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<CategoryModel> createCategory({
@@ -27,17 +35,19 @@ class CategoryService {
     required String slug,
     String? description,
   }) async {
-    final response = await _supabase
-        .from('categories')
-        .insert({
-          'name': name,
-          'slug': slug,
-          'description': description,
-          'is_active': true,
-        })
-        .select()
-        .single();
-    return CategoryModel.fromJson(response);
+    final id = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    final category = CategoryModel(
+      id: id,
+      name: name,
+      slug: slug,
+      description: description,
+      isActive: true,
+      createdAt: DateTime.parse(now),
+    );
+
+    await _firebase.put('categories/$id', category.toJson());
+    return category;
   }
 
   Future<CategoryModel> updateCategory({
@@ -55,11 +65,15 @@ class CategoryService {
     if (description != null) updates['description'] = description;
     if (isActive != null) updates['is_active'] = isActive;
 
-    final response = await _supabase.from('categories').update(updates).eq('id', id).select().single();
-    return CategoryModel.fromJson(response);
+    await _firebase.patch('categories/$id', updates);
+    final updated = await getCategoryById(id);
+    return updated!;
   }
 
   Future<void> deleteCategory(String id) async {
-    await _supabase.from('categories').delete().eq('id', id);
+    await _firebase.patch('categories/$id', {
+      'is_active': false,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
   }
 }

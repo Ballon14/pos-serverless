@@ -1,8 +1,11 @@
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
+import '../models/product_model.dart';
 import '../models/sale_model.dart';
+import '../models/stock_movement_model.dart';
 import '../models/user_model.dart';
+import 'auth_service.dart';
+import 'firebase_service.dart';
 
 class SaleCheckoutRequest {
   final List<SaleCheckoutItem> items;
@@ -38,7 +41,7 @@ class SaleCheckoutRequest {
       'payment_method': paymentMethod,
       'catatan': catatan,
       'offline_id': offlineId,
-      'sumber': 'flutter',
+      'sumber': 'flutter_firebase',
     };
   }
 }
@@ -73,127 +76,123 @@ class SaleCheckoutItem {
 }
 
 class SaleService {
-  final SupabaseClient _supabase;
+  final FirebaseService _firebase = FirebaseService();
+  final AuthService _auth = AuthService();
+  final Uuid _uuid = const Uuid();
 
-  SaleService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
-
-  /// Process checkout via Supabase Edge Function or direct fallback
+  /// Process checkout and save directly to Firebase Realtime Database
   Future<SaleModel> checkout(SaleCheckoutRequest request) async {
-    try {
-      // 1. Attempt invoking Edge Function first
-      final response = await _supabase.functions.invoke(
-        'checkout',
-        body: request.toJson(),
-      );
-
-      if (response.status == 200 && response.data != null) {
-        final data = response.data is Map ? response.data as Map<String, dynamic> : {};
-        if (data['sale'] != null) {
-          return SaleModel.fromJson(Map<String, dynamic>.from(data['sale'] as Map));
-        }
-      }
-    } catch (_) {
-      // If Edge Function is not yet deployed, fallback to client transaction
-    }
-
-    return _fallbackDirectCheckout(request);
-  }
-
-  /// Direct client fallback checkout when Edge Function is not yet deployed
-  Future<SaleModel> _fallbackDirectCheckout(SaleCheckoutRequest request) async {
-    final user = _supabase.auth.currentUser;
+    final user = _auth.currentUser;
     if (user == null) throw Exception('Silakan masuk terlebih dahulu');
 
     final now = DateTime.now();
     final datePrefix = DateFormat('yyyyMMdd').format(now);
 
-    // Generate invoice number: INV-YYYYMMDD-XXXX
-    final todaySales = await _supabase
-        .from('sales')
-        .select('invoice_number')
-        .ilike('invoice_number', 'INV-$datePrefix-%')
-        .order('created_at', ascending: false)
-        .limit(1);
-
+    // 1. Generate unique invoice number: INV-YYYYMMDD-XXXX
+    final salesData = await _firebase.get('sales');
     int nextSeq = 1;
-    if ((todaySales as List).isNotEmpty) {
-      final lastInv = todaySales.first['invoice_number'] as String;
-      final parts = lastInv.split('-');
-      if (parts.length == 3) {
-        nextSeq = (int.tryParse(parts[2]) ?? 0) + 1;
+    if (salesData != null && salesData is Map) {
+      for (final entry in salesData.entries) {
+        if (entry.value is Map) {
+          final inv = (entry.value['invoice_number'] as String? ?? '');
+          if (inv.startsWith('INV-$datePrefix-')) {
+            final parts = inv.split('-');
+            if (parts.length == 3) {
+              final seq = int.tryParse(parts[2]) ?? 0;
+              if (seq >= nextSeq) nextSeq = seq + 1;
+            }
+          }
+        }
       }
     }
     final invoiceNumber = 'INV-$datePrefix-${nextSeq.toString().padLeft(4, '0')}';
 
-    // 1. Insert sale header
-    final saleData = await _supabase
-        .from('sales')
-        .insert({
-          'invoice_number': invoiceNumber,
-          'user_id': user.id,
-          'subtotal': request.subtotal,
-          'diskon': request.diskon,
-          'grand_total': request.grandTotal,
-          'bayar': request.bayar,
-          'kembalian': request.kembalian,
-          'payment_method': request.paymentMethod,
-          'status': 'completed',
-          'catatan': request.catatan,
-          'sumber': 'flutter',
-          'offline_id': request.offlineId,
-        })
-        .select()
-        .single();
+    final saleId = _uuid.v4();
 
-    final saleId = saleData['id'] as String;
-
-    // 2. Insert items and update product stock + stock movements
+    // 2. Process items, deduct stock, and record stock movements
     final List<SaleItemModel> savedItems = [];
+    final List<Map<String, dynamic>> itemsJsonList = [];
+
     for (final item in request.items) {
-      final itemData = await _supabase
-          .from('sale_items')
-          .insert({
-            'sale_id': saleId,
-            'product_id': item.productId,
-            'qty': item.qty,
-            'returned_qty': 0,
-            'harga': item.harga,
-            'harga_beli': item.hargaBeli,
-            'diskon': item.diskon,
-            'subtotal': item.subtotal,
-          })
-          .select('*, products(*)')
-          .single();
+      final itemId = _uuid.v4();
 
-      savedItems.add(SaleItemModel.fromJson(itemData));
+      // Deduct product stock in Firebase RTDB
+      final prodData = await _firebase.get('products/${item.productId}');
+      ProductModel? prod;
+      int currentStock = 0;
+      if (prodData != null && prodData is Map) {
+        prod = ProductModel.fromJson(Map<String, dynamic>.from(prodData));
+        currentStock = prod.stok;
+      }
 
-      // Get current stock
-      final prod = await _supabase.from('products').select('stok').eq('id', item.productId).single();
-      final currentStock = (prod['stok'] as num).toInt();
-      final newStock = currentStock - item.qty;
-
-      // Update product stock
-      await _supabase.from('products').update({
-        'stok': newStock >= 0 ? newStock : 0,
+      final newStock = (currentStock - item.qty).clamp(0, 9999999);
+      await _firebase.patch('products/${item.productId}', {
+        'stok': newStock,
         'updated_at': now.toIso8601String(),
-      }).eq('id', item.productId);
+      });
 
       // Record stock movement
-      await _supabase.from('stock_movements').insert({
-        'product_id': item.productId,
-        'type': 'out',
-        'qty': item.qty,
-        'stok_sebelum': currentStock,
-        'stok_sesudah': newStock >= 0 ? newStock : 0,
-        'reference_type': 'sale',
-        'reference_id': saleId,
-        'keterangan': 'Penjualan $invoiceNumber',
-        'user_id': user.id,
-      });
+      final movementId = _uuid.v4();
+      final movement = StockMovementModel(
+        id: movementId,
+        productId: item.productId,
+        type: 'out',
+        qty: item.qty,
+        stokSebelum: currentStock,
+        stokSesudah: newStock,
+        referenceType: 'sale',
+        referenceId: saleId,
+        keterangan: 'Penjualan $invoiceNumber',
+        userId: user.id,
+        createdAt: now,
+      );
+      await _firebase.put('stock_movements/$movementId', movement.toJson());
+
+      final saleItem = SaleItemModel(
+        id: itemId,
+        saleId: saleId,
+        productId: item.productId,
+        qty: item.qty,
+        returnedQty: 0,
+        harga: item.harga,
+        hargaBeli: item.hargaBeli,
+        diskon: item.diskon,
+        subtotal: item.subtotal,
+        product: prod,
+        createdAt: now,
+      );
+
+      savedItems.add(saleItem);
+      itemsJsonList.add(saleItem.toJson());
     }
 
-    final fullSale = await getSaleById(saleId);
-    return fullSale ?? SaleModel.fromJson(saleData).copyWith(items: savedItems);
+    // 3. Save sale header to Firebase RTDB /sales/$saleId
+    final saleModel = SaleModel(
+      id: saleId,
+      invoiceNumber: invoiceNumber,
+      userId: user.id,
+      subtotal: request.subtotal,
+      diskon: request.diskon,
+      grandTotal: request.grandTotal,
+      bayar: request.bayar,
+      kembalian: request.kembalian,
+      paymentMethod: request.paymentMethod,
+      status: 'completed',
+      catatan: request.catatan,
+      sumber: 'flutter_firebase',
+      offlineId: request.offlineId,
+      createdAt: now,
+      updatedAt: now,
+      user: user,
+      items: savedItems,
+    );
+
+    final saleMap = saleModel.toJson();
+    saleMap['items'] = itemsJsonList;
+
+    await _firebase.put('sales/$saleId', saleMap);
+
+    return saleModel;
   }
 
   /// Get sales list with filters
@@ -204,108 +203,140 @@ class SaleService {
     int limit = 50,
     int offset = 0,
   }) async {
-    var query = _supabase.from('sales').select('*, users(*), sale_items(*, products(*))');
+    final salesData = await _firebase.get('sales');
+    if (salesData == null || salesData is! Map) return [];
 
-    if (startDate != null && startDate.isNotEmpty) {
-      query = query.gte('created_at', '${startDate}T00:00:00');
-    }
-    if (endDate != null && endDate.isNotEmpty) {
-      query = query.lte('created_at', '${endDate}T23:59:59');
-    }
-    if (status != null && status.isNotEmpty && status != 'all') {
-      query = query.eq('status', status);
+    final usersData = await _firebase.get('users');
+    final usersMap = <String, UserModel>{};
+    if (usersData != null && usersData is Map) {
+      for (final e in usersData.entries) {
+        if (e.value is Map) {
+          usersMap[e.key.toString()] = UserModel.fromJson(Map<String, dynamic>.from(e.value as Map));
+        }
+      }
     }
 
-    final response = await query.order('created_at', ascending: false).range(offset, offset + limit - 1);
-    return (response as List).map((json) => SaleModel.fromJson(json)).toList();
+    final productsData = await _firebase.get('products');
+    final productsMap = <String, ProductModel>{};
+    if (productsData != null && productsData is Map) {
+      for (final e in productsData.entries) {
+        if (e.value is Map) {
+          productsMap[e.key.toString()] = ProductModel.fromJson(Map<String, dynamic>.from(e.value as Map));
+        }
+      }
+    }
+
+    final list = <SaleModel>[];
+    for (final entry in salesData.entries) {
+      if (entry.value is Map) {
+        final map = Map<String, dynamic>.from(entry.value as Map);
+        final sale = SaleModel.fromJson(map);
+
+        if (status != null && status.isNotEmpty && status != 'all' && sale.status != status) {
+          continue;
+        }
+
+        if (startDate != null && startDate.isNotEmpty && sale.createdAt != null) {
+          final start = DateTime.tryParse('${startDate}T00:00:00');
+          if (start != null && sale.createdAt!.isBefore(start)) continue;
+        }
+
+        if (endDate != null && endDate.isNotEmpty && sale.createdAt != null) {
+          final end = DateTime.tryParse('${endDate}T23:59:59');
+          if (end != null && sale.createdAt!.isAfter(end)) continue;
+        }
+
+        final enrichedItems = sale.items.map((i) {
+          return SaleItemModel(
+            id: i.id,
+            saleId: i.saleId,
+            productId: i.productId,
+            qty: i.qty,
+            returnedQty: i.returnedQty,
+            harga: i.harga,
+            hargaBeli: i.hargaBeli,
+            diskon: i.diskon,
+            subtotal: i.subtotal,
+            product: productsMap[i.productId],
+            createdAt: i.createdAt,
+          );
+        }).toList();
+
+        final user = usersMap[sale.userId];
+        list.add(sale.copyWith(user: user, items: enrichedItems));
+      }
+    }
+
+    list.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+
+    if (offset >= list.length) return [];
+    final endIndex = (offset + limit).clamp(0, list.length);
+    return list.sublist(offset, endIndex);
   }
 
   /// Get single sale detail by ID
   Future<SaleModel?> getSaleById(String id) async {
-    final response = await _supabase
-        .from('sales')
-        .select('*, users(*), sale_items(*, products(*))')
-        .eq('id', id)
-        .maybeSingle();
-
-    if (response == null) return null;
-    return SaleModel.fromJson(response);
+    final data = await _firebase.get('sales/$id');
+    if (data == null || data is! Map) return null;
+    return SaleModel.fromJson(Map<String, dynamic>.from(data));
   }
 
-  /// Process sale item return via Edge Function or direct
+  /// Process return of items
   Future<void> processReturn({
     required String saleId,
     required List<Map<String, dynamic>> returnItems,
     String? reason,
   }) async {
-    try {
-      final response = await _supabase.functions.invoke(
-        'process-return',
-        body: {
-          'sale_id': saleId,
-          'items': returnItems,
-          'reason': reason,
-        },
-      );
-      if (response.status == 200) return;
-    } catch (_) {
-      // Fallback
-    }
-
-    final user = _supabase.auth.currentUser;
+    final user = _auth.currentUser;
     for (final ret in returnItems) {
-      final saleItemId = ret['sale_item_id'] as String;
+      final productId = ret['product_id'] as String;
       final returnQty = ret['qty'] as int;
 
-      // Update sale item returned qty
-      final itemData = await _supabase.from('sale_items').select().eq('id', saleItemId).single();
-      final currentRet = (itemData['returned_qty'] as num).toInt();
-      final productId = itemData['product_id'] as String;
+      // Restore stock in Firebase RTDB
+      final prodData = await _firebase.get('products/$productId');
+      if (prodData != null && prodData is Map) {
+        final currentStock = (prodData['stok'] as num?)?.toInt() ?? 0;
+        final restoredStock = currentStock + returnQty;
 
-      await _supabase.from('sale_items').update({
-        'returned_qty': currentRet + returnQty,
-      }).eq('id', saleItemId);
+        await _firebase.patch('products/$productId', {'stok': restoredStock});
 
-      // Restore stock
-      final prod = await _supabase.from('products').select('stok').eq('id', productId).single();
-      final currentStock = (prod['stok'] as num).toInt();
-      final restoredStock = currentStock + returnQty;
-
-      await _supabase.from('products').update({'stok': restoredStock}).eq('id', productId);
-
-      // Record stock movement
-      await _supabase.from('stock_movements').insert({
-        'product_id': productId,
-        'type': 'return',
-        'qty': returnQty,
-        'stok_sebelum': currentStock,
-        'stok_sesudah': restoredStock,
-        'reference_type': 'sale_return',
-        'reference_id': saleId,
-        'keterangan': 'Retur item: ${reason ?? "-"}',
-        'user_id': user?.id,
-      });
+        // Record stock movement
+        final movementId = _uuid.v4();
+        final movement = StockMovementModel(
+          id: movementId,
+          productId: productId,
+          type: 'return',
+          qty: returnQty,
+          stokSebelum: currentStock,
+          stokSesudah: restoredStock,
+          referenceType: 'sale_return',
+          referenceId: saleId,
+          keterangan: 'Retur item: ${reason ?? "-"}',
+          userId: user?.id,
+          createdAt: DateTime.now(),
+        );
+        await _firebase.put('stock_movements/$movementId', movement.toJson());
+      }
     }
 
-    // Update sale status to partial_return or returned
-    await _supabase.from('sales').update({'status': 'returned'}).eq('id', saleId);
+    await _firebase.patch('sales/$saleId', {'status': 'returned'});
   }
 
   /// Get today summary stats (revenue, transactions count)
   Future<Map<String, dynamic>> getTodayStats() async {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final response = await _supabase
-        .from('sales')
-        .select('grand_total, status')
-        .gte('created_at', '${today}T00:00:00')
-        .lte('created_at', '${today}T23:59:59');
+    final sales = await getSales(startDate: today, endDate: today, limit: 1000);
 
     double totalRevenue = 0.0;
     int totalTransactions = 0;
 
-    for (final row in response as List) {
-      if (row['status'] != 'cancelled') {
-        totalRevenue += (row['grand_total'] as num?)?.toDouble() ?? 0.0;
+    for (final s in sales) {
+      if (s.status != 'cancelled') {
+        totalRevenue += s.grandTotal;
         totalTransactions++;
       }
     }
@@ -314,47 +345,5 @@ class SaleService {
       'totalRevenue': totalRevenue,
       'totalTransactions': totalTransactions,
     };
-  }
-}
-
-extension SaleModelExtension on SaleModel {
-  SaleModel copyWith({
-    String? id,
-    String? invoiceNumber,
-    String? userId,
-    double? subtotal,
-    double? diskon,
-    double? grandTotal,
-    double? bayar,
-    double? kembalian,
-    String? paymentMethod,
-    String? status,
-    String? catatan,
-    String? sumber,
-    String? offlineId,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    UserModel? user,
-    List<SaleItemModel>? items,
-  }) {
-    return SaleModel(
-      id: id ?? this.id,
-      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
-      userId: userId ?? this.userId,
-      subtotal: subtotal ?? this.subtotal,
-      diskon: diskon ?? this.diskon,
-      grandTotal: grandTotal ?? this.grandTotal,
-      bayar: bayar ?? this.bayar,
-      kembalian: kembalian ?? this.kembalian,
-      paymentMethod: paymentMethod ?? this.paymentMethod,
-      status: status ?? this.status,
-      catatan: catatan ?? this.catatan,
-      sumber: sumber ?? this.sumber,
-      offlineId: offlineId ?? this.offlineId,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      user: user ?? this.user,
-      items: items ?? this.items,
-    );
   }
 }

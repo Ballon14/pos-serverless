@@ -1,11 +1,12 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'package:uuid/uuid.dart';
+import '../models/product_model.dart';
 import '../models/stock_movement_model.dart';
+import '../models/user_model.dart';
+import 'firebase_service.dart';
 
 class StockService {
-  final SupabaseClient _supabase;
-
-  StockService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final Uuid _uuid = const Uuid();
 
   Future<List<StockMovementModel>> getStockMovements({
     String? productId,
@@ -13,58 +14,118 @@ class StockService {
     int limit = 50,
     int offset = 0,
   }) async {
-    var query = _supabase.from('stock_movements').select('*, products(*), users(*)');
+    final movementsData = await _firebase.get('stock_movements');
+    if (movementsData == null || movementsData is! Map) return [];
 
-    if (productId != null && productId.isNotEmpty) {
-      query = query.eq('product_id', productId);
+    final productsData = await _firebase.get('products');
+    final usersData = await _firebase.get('users');
+
+    final productsMap = <String, ProductModel>{};
+    if (productsData != null && productsData is Map) {
+      for (final e in productsData.entries) {
+        if (e.value is Map) {
+          productsMap[e.key.toString()] = ProductModel.fromJson(Map<String, dynamic>.from(e.value as Map));
+        }
+      }
     }
 
-    if (type != null && type.isNotEmpty && type != 'all') {
-      query = query.eq('type', type);
+    final usersMap = <String, UserModel>{};
+    if (usersData != null && usersData is Map) {
+      for (final e in usersData.entries) {
+        if (e.value is Map) {
+          usersMap[e.key.toString()] = UserModel.fromJson(Map<String, dynamic>.from(e.value as Map));
+        }
+      }
     }
 
-    final response = await query.order('created_at', ascending: false).range(offset, offset + limit - 1);
-    return (response as List).map((json) => StockMovementModel.fromJson(json)).toList();
+    final list = <StockMovementModel>[];
+    for (final entry in movementsData.entries) {
+      if (entry.value is Map) {
+        final m = StockMovementModel.fromJson(Map<String, dynamic>.from(entry.value as Map));
+
+        if (productId != null && productId.isNotEmpty && m.productId != productId) {
+          continue;
+        }
+
+        if (type != null && type.isNotEmpty && type != 'all' && m.type != type) {
+          continue;
+        }
+
+        final product = productsMap[m.productId];
+        final user = m.userId != null ? usersMap[m.userId] : null;
+
+        list.add(StockMovementModel(
+          id: m.id,
+          productId: m.productId,
+          type: m.type,
+          qty: m.qty,
+          stokSebelum: m.stokSebelum,
+          stokSesudah: m.stokSesudah,
+          referenceType: m.referenceType,
+          referenceId: m.referenceId,
+          keterangan: m.keterangan,
+          userId: m.userId,
+          createdAt: m.createdAt,
+          product: product,
+          user: user,
+        ));
+      }
+    }
+
+    list.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+
+    if (offset >= list.length) return [];
+    final endIndex = (offset + limit).clamp(0, list.length);
+    return list.sublist(offset, endIndex);
   }
 
-  /// Adjust stock manually (e.g. stock opname / penyesuaian)
+  /// Adjust stock manually (e.g. stock opname)
   Future<StockMovementModel> adjustStock({
     required String productId,
     required int newStock,
     required String reason,
     required String userId,
   }) async {
-    // 1. Get current product stock
-    final productData = await _supabase.from('products').select('stok').eq('id', productId).single();
-    final int currentStock = (productData['stok'] as num).toInt();
+    // 1. Get current product
+    final prodData = await _firebase.get('products/$productId');
+    if (prodData == null || prodData is! Map) {
+      throw Exception('Produk tidak ditemukan di database.');
+    }
+    final int currentStock = (prodData['stok'] as num?)?.toInt() ?? 0;
     final int diff = newStock - currentStock;
 
     if (diff == 0) {
       throw Exception('Stok baru sama dengan stok saat ini.');
     }
 
-    // 2. Update product stock
-    await _supabase.from('products').update({
+    final now = DateTime.now().toIso8601String();
+
+    // 2. Update stock in Firebase RTDB
+    await _firebase.patch('products/$productId', {
       'stok': newStock,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', productId);
+      'updated_at': now,
+    });
 
     // 3. Record stock movement
-    final movement = await _supabase
-        .from('stock_movements')
-        .insert({
-          'product_id': productId,
-          'type': 'adjustment',
-          'qty': diff.abs(),
-          'stok_sebelum': currentStock,
-          'stok_sesudah': newStock,
-          'reference_type': 'manual_adjustment',
-          'keterangan': reason,
-          'user_id': userId,
-        })
-        .select('*, products(*), users(*)')
-        .single();
+    final movementId = _uuid.v4();
+    final movement = StockMovementModel(
+      id: movementId,
+      productId: productId,
+      type: 'adjustment',
+      qty: diff.abs(),
+      stokSebelum: currentStock,
+      stokSesudah: newStock,
+      referenceType: 'manual_adjustment',
+      keterangan: reason,
+      userId: userId,
+      createdAt: DateTime.parse(now),
+    );
 
-    return StockMovementModel.fromJson(movement);
+    await _firebase.put('stock_movements/$movementId', movement.toJson());
+    return movement;
   }
 }

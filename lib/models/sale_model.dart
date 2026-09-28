@@ -112,6 +112,46 @@ class SaleModel {
   bool get isReturned => status == 'returned';
   bool get isPartialReturn => status == 'partial_return';
 
+  SaleModel copyWith({
+    String? id,
+    String? invoiceNumber,
+    String? userId,
+    double? subtotal,
+    double? diskon,
+    double? grandTotal,
+    double? bayar,
+    double? kembalian,
+    String? paymentMethod,
+    String? status,
+    String? catatan,
+    String? sumber,
+    String? offlineId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    UserModel? user,
+    List<SaleItemModel>? items,
+  }) {
+    return SaleModel(
+      id: id ?? this.id,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      userId: userId ?? this.userId,
+      subtotal: subtotal ?? this.subtotal,
+      diskon: diskon ?? this.diskon,
+      grandTotal: grandTotal ?? this.grandTotal,
+      bayar: bayar ?? this.bayar,
+      kembalian: kembalian ?? this.kembalian,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      status: status ?? this.status,
+      catatan: catatan ?? this.catatan,
+      sumber: sumber ?? this.sumber,
+      offlineId: offlineId ?? this.offlineId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      user: user ?? this.user,
+      items: items ?? this.items,
+    );
+  }
+
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     UserModel? user;
     if (json['users'] != null && json['users'] is Map) {

@@ -122,12 +122,12 @@ class SettingsScreen extends ConsumerWidget {
                         children: [
                           Icon(Icons.cloud_done_rounded, color: AppColors.success, size: 20),
                           SizedBox(width: 8),
-                          Text('Arsitektur Serverless Supabase', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text('Arsitektur Serverless Firebase RTDB', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'Aplikasi berjalan 100% serverless dengan Flutter multi-platform dan backend Supabase (PostgreSQL, Row Level Security, Realtime, dan Edge Functions).',
+                        'Aplikasi berjalan 100% serverless dengan Flutter multi-platform dan backend Firebase Realtime Database (Google Cloud, Realtime Sync, dan Offline Caching).',
                         style: TextStyle(fontSize: 13, height: 1.5),
                       ),
                       const SizedBox(height: 16),

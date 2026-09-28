@@ -1,55 +1,91 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../config/constants.dart';
 import '../models/user_model.dart';
+import 'firebase_service.dart';
 
 class AuthService {
-  final SupabaseClient _supabase;
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
+  AuthService._internal();
 
-  AuthService({SupabaseClient? supabase}) : _supabase = supabase ?? SupabaseConfig.client;
+  final FirebaseService _firebase = FirebaseService();
+  final _authStateController = StreamController<UserModel?>.broadcast();
 
-  User? get currentAuthUser => _supabase.auth.currentUser;
-  bool get isAuthenticated => currentAuthUser != null;
-  Stream<AuthState> get onAuthStateChange => _supabase.auth.onAuthStateChange;
+  Stream<UserModel?> get onAuthStateChange => _authStateController.stream;
 
-  /// Sign in with email and password
-  Future<UserModel> signIn({required String email, required String password}) async {
-    final response = await _supabase.auth.signInWithPassword(
-      email: email.trim(),
-      password: password,
-    );
+  Box get _sessionBox => Hive.box(AppConstants.sessionBoxName);
 
-    final user = response.user;
-    if (user == null) {
-      throw const AuthException('Gagal masuk: Pengguna tidak ditemukan');
+  UserModel? get currentUser {
+    if (!Hive.isBoxOpen(AppConstants.sessionBoxName)) return null;
+    final jsonStr = _sessionBox.get('current_user') as String?;
+    if (jsonStr == null) return null;
+    try {
+      final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+      return UserModel.fromJson(map);
+    } catch (_) {
+      return null;
     }
-
-    final profile = await getUserProfile(user.id);
-    if (profile == null) {
-      throw const AuthException('Profil pengguna tidak ditemukan');
-    }
-
-    if (!profile.isActive) {
-      await signOut();
-      throw const AuthException('Akun Anda telah dinonaktifkan. Hubungi Administrator.');
-    }
-
-    return profile;
   }
 
-  /// Fetch user profile from public.users table
-  Future<UserModel?> getUserProfile(String userId) async {
-    final data = await _supabase
-        .from('users')
-        .select()
-        .eq('id', userId)
-        .maybeSingle();
+  bool get isAuthenticated => currentUser != null;
 
-    if (data == null) return null;
-    return UserModel.fromJson(data);
+  /// Sign in with email and password against Firebase RTDB /users
+  Future<UserModel> signIn({required String email, required String password}) async {
+    final cleanEmail = email.trim().toLowerCase();
+
+    // Query users from Firebase Realtime Database
+    final usersData = await _firebase.get('users');
+    if (usersData == null || usersData is! Map) {
+      throw Exception('Data pengguna tidak ditemukan di server.');
+    }
+
+    Map<String, dynamic>? matchedUser;
+    for (final entry in usersData.entries) {
+      if (entry.value is Map) {
+        final u = Map<String, dynamic>.from(entry.value as Map);
+        if ((u['email'] as String? ?? '').toLowerCase() == cleanEmail) {
+          matchedUser = u;
+          break;
+        }
+      }
+    }
+
+    if (matchedUser == null) {
+      throw Exception('Email tidak terdaftar!');
+    }
+
+    final storedPassword = matchedUser['password'] as String? ?? '';
+    if (storedPassword != password) {
+      throw Exception('Kata sandi yang Anda masukkan salah!');
+    }
+
+    final userModel = UserModel.fromJson(matchedUser);
+
+    if (!userModel.isActive) {
+      throw Exception('Akun Anda telah dinonaktifkan. Hubungi Administrator.');
+    }
+
+    // Persist session to Hive
+    await _sessionBox.put('current_user', jsonEncode(userModel.toJson()));
+    _authStateController.add(userModel);
+
+    return userModel;
   }
 
   /// Sign out current user
   Future<void> signOut() async {
-    await _supabase.auth.signOut();
+    if (Hive.isBoxOpen(AppConstants.sessionBoxName)) {
+      await _sessionBox.delete('current_user');
+    }
+    _authStateController.add(null);
+  }
+
+  /// Get user profile by ID from Firebase RTDB
+  Future<UserModel?> getUserProfile(String userId) async {
+    final data = await _firebase.get('users/$userId');
+    if (data == null || data is! Map) return null;
+    return UserModel.fromJson(Map<String, dynamic>.from(data));
   }
 }
