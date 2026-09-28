@@ -3,9 +3,12 @@ import '../models/category_model.dart';
 import '../models/product_model.dart';
 import 'firebase_service.dart';
 
+import 'activity_log_service.dart';
+
 class ProductService {
   final FirebaseService _firebase = FirebaseService();
   final Uuid _uuid = const Uuid();
+  final ActivityLogService _logger = ActivityLogService();
 
   Future<List<ProductModel>> getProducts({
     String? search,
@@ -95,6 +98,40 @@ class ProductService {
     return lowStock;
   }
 
+  Future<String> generateSku(String categoryId) async {
+    final catData = await _firebase.get('categories/$categoryId');
+    String prefix = 'PRD';
+    if (catData != null && catData is Map) {
+      final name = (catData['name'] as String? ?? 'PRD').trim();
+      final words = name.split(' ');
+      if (words.length >= 2) {
+        prefix = (words[0][0] + words[1][0]).toUpperCase();
+      } else if (name.length >= 3) {
+        prefix = name.substring(0, 3).toUpperCase();
+      } else {
+        prefix = name.toUpperCase();
+      }
+    }
+
+    final productsData = await _firebase.get('products');
+    int count = 1;
+    if (productsData != null && productsData is Map) {
+      for (final entry in productsData.entries) {
+        if (entry.value is Map) {
+          final sku = (entry.value['sku'] as String? ?? '');
+          if (sku.startsWith('$prefix-')) {
+            final parts = sku.split('-');
+            if (parts.length >= 2) {
+              final numVal = int.tryParse(parts.last) ?? 0;
+              if (numVal >= count) count = numVal + 1;
+            }
+          }
+        }
+      }
+    }
+    return '$prefix-${count.toString().padLeft(3, '0')}';
+  }
+
   Future<ProductModel> createProduct(ProductModel product) async {
     final id = product.id.isNotEmpty ? product.id : _uuid.v4();
     final now = DateTime.now().toIso8601String();
@@ -104,6 +141,7 @@ class ProductService {
     );
 
     await _firebase.put('products/$id', toSave.toJson());
+    await _logger.log('product.create', 'Produk "${product.name}" (SKU: ${product.sku}) ditambahkan.');
     return toSave;
   }
 
@@ -111,13 +149,17 @@ class ProductService {
     final now = DateTime.now().toIso8601String();
     final toSave = product.copyWith(updatedAt: DateTime.parse(now));
     await _firebase.put('products/${product.id}', toSave.toJson());
+    await _logger.log('product.update', 'Produk "${product.name}" (SKU: ${product.sku}) diperbarui.');
     return toSave;
   }
 
   Future<void> deleteProduct(String id) async {
+    final prodData = await _firebase.get('products/$id');
+    final name = prodData != null && prodData is Map ? (prodData['name'] ?? id) : id;
     await _firebase.patch('products/$id', {
       'is_active': false,
       'updated_at': DateTime.now().toIso8601String(),
     });
+    await _logger.log('product.delete', 'Produk "$name" dinonaktifkan/dihapus.');
   }
 }

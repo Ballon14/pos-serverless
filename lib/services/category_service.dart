@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../models/category_model.dart';
+import 'activity_log_service.dart';
 import 'firebase_service.dart';
 
 class CategoryService {
@@ -70,10 +71,25 @@ class CategoryService {
     return updated!;
   }
 
+  Future<void> toggleActive(String id) async {
+    final cat = await getCategoryById(id);
+    if (cat != null) {
+      final newStatus = !cat.isActive;
+      await _firebase.patch('categories/$id', {
+        'is_active': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+      await ActivityLogService().log(
+        'category.toggle',
+        'Status kategori "${cat.name}" diubah menjadi ${newStatus ? 'Aktif' : 'Nonaktif'}.',
+      );
+    }
+  }
+
   Future<void> deleteCategory(String id) async {
-    await _firebase.patch('categories/$id', {
-      'is_active': false,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    final cat = await getCategoryById(id);
+    final name = cat?.name ?? id;
+    await _firebase.delete('categories/$id');
+    await ActivityLogService().log('category.delete', 'Kategori "$name" dihapus.');
   }
 }

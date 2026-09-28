@@ -4,9 +4,12 @@ import '../models/stock_movement_model.dart';
 import '../models/user_model.dart';
 import 'firebase_service.dart';
 
+import 'activity_log_service.dart';
+
 class StockService {
   final FirebaseService _firebase = FirebaseService();
   final Uuid _uuid = const Uuid();
+  final ActivityLogService _logger = ActivityLogService();
 
   Future<List<StockMovementModel>> getStockMovements({
     String? productId,
@@ -83,49 +86,79 @@ class StockService {
     return list.sublist(offset, endIndex);
   }
 
-  /// Adjust stock manually (e.g. stock opname)
+  /// Adjust stock by delta (+qty or -qty) matching Laravel StockController@adjust
+  Future<StockMovementModel> adjustStockDelta({
+    required String productId,
+    required int deltaQty,
+    required String reason,
+    required String userId,
+  }) async {
+    if (deltaQty == 0) {
+      throw Exception('Jumlah penyesuaian tidak boleh 0.');
+    }
+
+    final prodData = await _firebase.get('products/$productId');
+    if (prodData == null || prodData is! Map) {
+      throw Exception('Produk tidak ditemukan di database.');
+    }
+    final int currentStock = (prodData['stok'] as num?)?.toInt() ?? 0;
+    final int newStock = currentStock + deltaQty;
+    final String prodName = (prodData['name'] as String?) ?? 'Produk';
+
+    if (newStock < 0) {
+      throw Exception('Stok $prodName tidak mencukupi untuk pengurangan ${deltaQty.abs()} (tersisa $currentStock).');
+    }
+
+    final now = DateTime.now();
+
+    await _firebase.patch('products/$productId', {
+      'stok': newStock,
+      'updated_at': now.toIso8601String(),
+    });
+
+    final movementId = _uuid.v4();
+    final movement = StockMovementModel(
+      id: movementId,
+      productId: productId,
+      type: 'adjustment',
+      qty: deltaQty.abs(),
+      stokSebelum: currentStock,
+      stokSesudah: newStock,
+      referenceType: 'adjustment',
+      keterangan: reason,
+      userId: userId,
+      createdAt: now,
+    );
+
+    await _firebase.put('stock_movements/$movementId', movement.toJson());
+
+    await _logger.log(
+      'stock.adjust',
+      'Stok "$prodName" disesuaikan ${deltaQty >= 0 ? '+' : ''}$deltaQty (menjadi $newStock). Alasan: $reason',
+      userId: userId,
+    );
+
+    return movement;
+  }
+
+  /// Adjust stock to absolute target quantity
   Future<StockMovementModel> adjustStock({
     required String productId,
     required int newStock,
     required String reason,
     required String userId,
   }) async {
-    // 1. Get current product
     final prodData = await _firebase.get('products/$productId');
     if (prodData == null || prodData is! Map) {
       throw Exception('Produk tidak ditemukan di database.');
     }
     final int currentStock = (prodData['stok'] as num?)?.toInt() ?? 0;
     final int diff = newStock - currentStock;
-
-    if (diff == 0) {
-      throw Exception('Stok baru sama dengan stok saat ini.');
-    }
-
-    final now = DateTime.now().toIso8601String();
-
-    // 2. Update stock in Firebase RTDB
-    await _firebase.patch('products/$productId', {
-      'stok': newStock,
-      'updated_at': now,
-    });
-
-    // 3. Record stock movement
-    final movementId = _uuid.v4();
-    final movement = StockMovementModel(
-      id: movementId,
+    return adjustStockDelta(
       productId: productId,
-      type: 'adjustment',
-      qty: diff.abs(),
-      stokSebelum: currentStock,
-      stokSesudah: newStock,
-      referenceType: 'manual_adjustment',
-      keterangan: reason,
+      deltaQty: diff,
+      reason: reason,
       userId: userId,
-      createdAt: DateTime.parse(now),
     );
-
-    await _firebase.put('stock_movements/$movementId', movement.toJson());
-    return movement;
   }
 }

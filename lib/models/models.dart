@@ -6,3 +6,6 @@ export 'sale_model.dart';
 export 'stock_movement_model.dart';
 export 'attendance_model.dart';
 export 'leave_request_model.dart';
+export 'purchase_model.dart';
+export 'sale_return_model.dart';
+export 'activity_log_model.dart';

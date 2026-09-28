@@ -2,9 +2,12 @@ import 'package:uuid/uuid.dart';
 import '../models/supplier_model.dart';
 import 'firebase_service.dart';
 
+import 'activity_log_service.dart';
+
 class SupplierService {
   final FirebaseService _firebase = FirebaseService();
   final Uuid _uuid = const Uuid();
+  final ActivityLogService _logger = ActivityLogService();
 
   Future<List<SupplierModel>> getSuppliers({bool onlyActive = true}) async {
     final data = await _firebase.get('suppliers');
@@ -53,6 +56,7 @@ class SupplierService {
     );
 
     await _firebase.put('suppliers/$id', supplier.toJson());
+    await _logger.log('supplier.create', 'Supplier "$name" ($code) ditambahkan.');
     return supplier;
   }
 
@@ -79,13 +83,14 @@ class SupplierService {
 
     await _firebase.patch('suppliers/$id', updates);
     final updated = await getSupplierById(id);
+    await _logger.log('supplier.update', 'Supplier "${updated?.name ?? id}" diperbarui.');
     return updated!;
   }
 
   Future<void> deleteSupplier(String id) async {
-    await _firebase.patch('suppliers/$id', {
-      'is_active': false,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    final sup = await getSupplierById(id);
+    final name = sup?.name ?? id;
+    await _firebase.delete('suppliers/$id');
+    await _logger.log('supplier.delete', 'Supplier "$name" dihapus.');
   }
 }

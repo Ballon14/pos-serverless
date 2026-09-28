@@ -4,6 +4,7 @@ import '../models/product_model.dart';
 import '../models/sale_model.dart';
 import '../models/stock_movement_model.dart';
 import '../models/user_model.dart';
+import 'activity_log_service.dart';
 import 'auth_service.dart';
 import 'firebase_service.dart';
 
@@ -79,6 +80,7 @@ class SaleService {
   final FirebaseService _firebase = FirebaseService();
   final AuthService _auth = AuthService();
   final Uuid _uuid = const Uuid();
+  final ActivityLogService _logger = ActivityLogService();
 
   /// Process checkout and save directly to Firebase Realtime Database
   Future<SaleModel> checkout(SaleCheckoutRequest request) async {
@@ -191,6 +193,13 @@ class SaleService {
     saleMap['items'] = itemsJsonList;
 
     await _firebase.put('sales/$saleId', saleMap);
+
+    await _logger.log(
+      'sale.checkout',
+      'Transaksi $invoiceNumber berhasil (Total: Rp ${request.grandTotal.toInt()}, Kasir: ${user.name})',
+      userId: user.id,
+      userName: user.name,
+    );
 
     return saleModel;
   }

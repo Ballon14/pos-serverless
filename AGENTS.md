@@ -59,21 +59,27 @@ lib/
 │   ├── router.dart            # GoRouter configuration & route guards
 │   └── theme.dart             # Material 3 custom dark/light theme
 ├── models/                    # Data models with JSON serialization
+│   ├── activity_log_model.dart
 │   ├── attendance_model.dart
 │   ├── category_model.dart
 │   ├── leave_request_model.dart
 │   ├── product_model.dart
+│   ├── purchase_model.dart
 │   ├── sale_model.dart
+│   ├── sale_return_model.dart
 │   ├── stock_movement_model.dart
 │   ├── supplier_model.dart
 │   └── user_model.dart
 ├── services/                  # Firebase RTDB REST client & service wrappers
 │   ├── firebase_service.dart  # Core HTTP client with auto-seeder
+│   ├── activity_log_service.dart
 │   ├── attendance_service.dart
 │   ├── auth_service.dart
 │   ├── category_service.dart
 │   ├── product_service.dart
+│   ├── purchase_service.dart
 │   ├── report_service.dart
+│   ├── sale_return_service.dart
 │   ├── sale_service.dart
 │   ├── stock_service.dart
 │   └── supplier_service.dart
@@ -81,23 +87,29 @@ lib/
 │   ├── attendance_provider.dart
 │   ├── auth_provider.dart
 │   ├── cart_provider.dart
-│   └── product_provider.dart
+│   ├── product_provider.dart
+│   ├── system_provider.dart
+│   └── transaction_provider.dart
 ├── screens/                   # Top-level screen views
+│   ├── activity_logs/
 │   ├── attendance/
 │   ├── auth/
+│   ├── categories/
 │   ├── dashboard/
 │   ├── pos/
 │   ├── products/
+│   ├── purchases/
 │   ├── reports/
+│   ├── sales/
 │   ├── settings/
-│   └── stock/
+│   ├── stock/
+│   └── suppliers/
 ├── widgets/                   # Modular, reusable Flutter widgets
+│   ├── app_layout.dart
 │   ├── attendance_banner.dart
-│   ├── barcode_input.dart
-│   ├── custom_button.dart
 │   ├── payment_dialog.dart
 │   ├── receipt_view.dart
-│   └── sidebar_navigation.dart
+│   └── sidebar.dart
 └── utils/                     # Helpers (currency, date, validation)
     ├── formatters.dart
     └── validators.dart

@@ -61,7 +61,19 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
                       Expanded(
                         child: TextField(
                           controller: skuCtrl,
-                          decoration: const InputDecoration(labelText: 'SKU / Barcode *'),
+                          decoration: InputDecoration(
+                            labelText: 'SKU / Barcode *',
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                              tooltip: 'Generate SKU Otomatis',
+                              onPressed: () async {
+                                if (categoryId != null) {
+                                  final newSku = await ref.read(productServiceProvider).generateSku(categoryId!);
+                                  skuCtrl.text = newSku;
+                                }
+                              },
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),

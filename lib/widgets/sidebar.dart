@@ -3,29 +3,89 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../config/theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/product_provider.dart';
 
-class NavigationItem {
+class NavSection {
   final String title;
-  final IconData icon;
-  final String route;
+  final List<NavEntry> entries;
   final bool adminOnly;
 
-  const NavigationItem({
+  const NavSection({
     required this.title,
-    required this.icon,
-    required this.route,
+    required this.entries,
     this.adminOnly = false,
   });
 }
 
-const List<NavigationItem> kNavigationItems = [
-  NavigationItem(title: 'Dashboard', icon: Icons.dashboard_rounded, route: '/'),
-  NavigationItem(title: 'Kasir (POS)', icon: Icons.point_of_sale_rounded, route: '/pos'),
-  NavigationItem(title: 'Produk', icon: Icons.inventory_2_rounded, route: '/products'),
-  NavigationItem(title: 'Mutasi Stok', icon: Icons.swap_horiz_rounded, route: '/stock'),
-  NavigationItem(title: 'Absensi', icon: Icons.badge_rounded, route: '/attendance'),
-  NavigationItem(title: 'Laporan', icon: Icons.analytics_rounded, route: '/reports'),
-  NavigationItem(title: 'Pengaturan', icon: Icons.settings_rounded, route: '/settings'),
+class NavEntry {
+  final String title;
+  final IconData icon;
+  final String route;
+  final bool adminOnly;
+  final bool isLowStockBadge;
+
+  const NavEntry({
+    required this.title,
+    required this.icon,
+    required this.route,
+    this.adminOnly = false,
+    this.isLowStockBadge = false,
+  });
+}
+
+final List<NavSection> kNavSections = [
+  const NavSection(
+    title: 'UTAMA',
+    entries: [
+      NavEntry(title: 'Dashboard', icon: Icons.dashboard_rounded, route: '/'),
+      NavEntry(title: 'Kasir (POS)', icon: Icons.point_of_sale_rounded, route: '/pos'),
+    ],
+  ),
+  const NavSection(
+    title: 'MASTER DATA',
+    adminOnly: true,
+    entries: [
+      NavEntry(title: 'Kategori', icon: Icons.folder_open_rounded, route: '/categories', adminOnly: true),
+      NavEntry(title: 'Produk', icon: Icons.inventory_2_rounded, route: '/products', adminOnly: true),
+      NavEntry(title: 'Supplier', icon: Icons.storefront_rounded, route: '/suppliers', adminOnly: true),
+    ],
+  ),
+  const NavSection(
+    title: 'TRANSAKSI',
+    entries: [
+      NavEntry(title: 'Riwayat Penjualan', icon: Icons.receipt_long_rounded, route: '/sales'),
+      NavEntry(title: 'Retur Penjualan', icon: Icons.assignment_return_rounded, route: '/sale-returns', adminOnly: true),
+      NavEntry(title: 'Pembelian', icon: Icons.shopping_bag_rounded, route: '/purchases', adminOnly: true),
+    ],
+  ),
+  const NavSection(
+    title: 'STOK',
+    adminOnly: true,
+    entries: [
+      NavEntry(title: 'Kartu Stok', icon: Icons.swap_horiz_rounded, route: '/stock', adminOnly: true),
+      NavEntry(title: 'Stok Menipis', icon: Icons.warning_amber_rounded, route: '/stock-low', adminOnly: true, isLowStockBadge: true),
+    ],
+  ),
+  const NavSection(
+    title: 'LAPORAN',
+    entries: [
+      NavEntry(title: 'Laporan', icon: Icons.analytics_rounded, route: '/reports'),
+    ],
+  ),
+  const NavSection(
+    title: 'ABSENSI',
+    entries: [
+      NavEntry(title: 'Presensi & Izin', icon: Icons.badge_rounded, route: '/attendance'),
+    ],
+  ),
+  const NavSection(
+    title: 'SISTEM',
+    adminOnly: true,
+    entries: [
+      NavEntry(title: 'Log Aktivitas', icon: Icons.history_rounded, route: '/activity-logs', adminOnly: true),
+      NavEntry(title: 'Pengaturan Sistem', icon: Icons.settings_rounded, route: '/settings', adminOnly: true),
+    ],
+  ),
 ];
 
 class AppSidebar extends ConsumerWidget {
@@ -36,10 +96,11 @@ class AppSidebar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).value;
+    final lowStockCount = ref.watch(lowStockProductsProvider).value?.length ?? 0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      width: 250,
+      width: 260,
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
         border: Border(
@@ -54,7 +115,7 @@ class AppSidebar extends ConsumerWidget {
         children: [
           // Brand Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: Row(
               children: [
                 Container(
@@ -87,7 +148,7 @@ class AppSidebar extends ConsumerWidget {
                       ),
                     ),
                     Text(
-                      'POS & Inventory',
+                      'Toko Mba Emi POS',
                       style: TextStyle(
                         fontSize: 11,
                         color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
@@ -102,73 +163,39 @@ class AppSidebar extends ConsumerWidget {
 
           const Divider(height: 1),
 
-          const SizedBox(height: 12),
-
-          // Menu list
+          // Menu list with sections
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: kNavigationItems.map((item) {
-                if (item.adminOnly && user != null && !user.isAdmin) {
-                  return const SizedBox.shrink();
-                }
-
-                final isActive = currentRoute == item.route ||
-                    (item.route != '/' && currentRoute.startsWith(item.route));
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        context.go(item.route);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? AppColors.primary.withValues(alpha: 0.15)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              item.icon,
-                              size: 20,
-                              color: isActive
-                                  ? AppColors.primary
-                                  : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Text(
-                                item.title,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                                  color: isActive
-                                      ? AppColors.primary
-                                      : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
-                                ),
-                              ),
-                            ),
-                          ],
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              children: [
+                for (final section in kNavSections) ...[
+                  if (!section.adminOnly || (user != null && user.isAdmin)) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 14, bottom: 6),
+                      child: Text(
+                        section.title,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                          color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
                         ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
+                    for (final item in section.entries) ...[
+                      if (!item.adminOnly || (user != null && user.isAdmin)) ...[
+                        _buildNavItem(context, item, isDark, lowStockCount),
+                      ],
+                    ],
+                  ],
+                ],
+              ],
             ),
           ),
 
           const Divider(height: 1),
 
-          // User Profile & Logout
+          // User Profile & Logout at Bottom
           if (user != null)
             Padding(
               padding: const EdgeInsets.all(16),
@@ -255,6 +282,77 @@ class AppSidebar extends ConsumerWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(BuildContext context, NavEntry item, bool isDark, int lowStockCount) {
+    final isActive = currentRoute == item.route ||
+        (item.route != '/' && currentRoute.startsWith(item.route));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            context.go(item.route);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? AppColors.primary.withValues(alpha: 0.15)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: isActive
+                  ? Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1)
+                  : null,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  item.icon,
+                  size: 19,
+                  color: isActive
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    item.title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                      color: isActive
+                          ? AppColors.primary
+                          : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                    ),
+                  ),
+                ),
+                if (item.isLowStockBadge && lowStockCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$lowStockCount',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
