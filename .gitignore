@@ -34,3 +34,11 @@ Thumbs.db
 /storage/backups
 public/downloads/
 
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+.metadata
+
