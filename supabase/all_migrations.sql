@@ -346,29 +346,133 @@ CREATE POLICY "Admin can modify settings" ON public.settings
   FOR ALL USING (public.current_user_role() = 'admin');
 
 -- ========================================================
--- 7. INITIAL SEED DATA
+-- 7. COMPLETE INITIAL SEED DATA
 -- ========================================================
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Default Users (Password: password123)
+INSERT INTO auth.users (
+  id, instance_id, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at, role, aud
+) VALUES
+  (
+    '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
+    'admin@tokombaemi.com', crypt('password123', gen_salt('bf')), NOW(),
+    '{"provider":"email","providers":["email"]}', '{"name":"Administrator","role":"admin"}',
+    NOW(), NOW(), 'authenticated', 'authenticated'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
+    'kasir1@tokombaemi.com', crypt('password123', gen_salt('bf')), NOW(),
+    '{"provider":"email","providers":["email"]}', '{"name":"Siti Kasir","role":"kasir"}',
+    NOW(), NOW(), 'authenticated', 'authenticated'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
+    'kasir2@tokombaemi.com', crypt('password123', gen_salt('bf')), NOW(),
+    '{"provider":"email","providers":["email"]}', '{"name":"Budi Kasir","role":"kasir"}',
+    NOW(), NOW(), 'authenticated', 'authenticated'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.users (id, name, email, role, is_active) VALUES
+  ('00000000-0000-0000-0000-000000000001', 'Administrator', 'admin@tokombaemi.com', 'admin', true),
+  ('00000000-0000-0000-0000-000000000002', 'Siti Kasir', 'kasir1@tokombaemi.com', 'kasir', true),
+  ('00000000-0000-0000-0000-000000000003', 'Budi Kasir', 'kasir2@tokombaemi.com', 'kasir', true)
+ON CONFLICT (id) DO UPDATE SET
+  role = EXCLUDED.role,
+  name = EXCLUDED.name;
+
+-- Settings
 INSERT INTO public.settings (key, value) VALUES
-  ('store_name', 'StockKu POS'),
-  ('store_address', 'Jl. Contoh Alamat No. 123, Jakarta'),
-  ('store_phone', '081234567890'),
-  ('receipt_footer', 'Terima kasih atas kunjungan Anda!')
-ON CONFLICT (key) DO NOTHING;
+  ('store_name', 'Toko Mba Emi'),
+  ('store_address', 'Jl. Raya Utama No. 45, Jakarta'),
+  ('store_phone', '0812-3456-7890'),
+  ('receipt_footer', 'Terima kasih atas kunjungan Anda di Toko Mba Emi!')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
+-- 5 Categories
 INSERT INTO public.categories (id, name, slug, description, is_active) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Makanan & Minuman', 'makanan-minuman', 'Produk konsumsi harian', true),
-  ('22222222-2222-2222-2222-222222222222', 'Kebutuhan Rumah', 'kebutuhan-rumah', 'Peralatan dan kebutuhan rumah tangga', true),
-  ('33333333-3333-3333-3333-333333333333', 'Alat Tulis Kantor', 'atk', 'Perlengkapan sekolah dan kantor', true)
-ON CONFLICT (id) DO NOTHING;
+  ('10000000-0000-0000-0000-000000000001', 'Makanan', 'makanan', 'Produk makanan ringan & berat', true),
+  ('10000000-0000-0000-0000-000000000002', 'Minuman', 'minuman', 'Minuman kemasan & segar', true),
+  ('10000000-0000-0000-0000-000000000003', 'Kebersihan', 'kebersihan', 'Produk kebersihan rumah tangga', true),
+  ('10000000-0000-0000-0000-000000000004', 'Sembako', 'sembako', 'Kebutuhan pokok sehari-hari', true),
+  ('10000000-0000-0000-0000-000000000005', 'Alat Tulis', 'alat-tulis', 'Peralatan tulis dan kantor', true)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  slug = EXCLUDED.slug,
+  description = EXCLUDED.description;
 
+-- 3 Suppliers
 INSERT INTO public.suppliers (id, name, code, phone, email, address, contact_person, is_active) VALUES
-  ('44444444-4444-4444-4444-444444444444', 'PT Sumber Pangan Sejahtera', 'SUP-001', '0215551234', 'order@sumberpangan.com', 'Kawasan Industri Pulogadung', 'Budi Santoso', true),
-  ('55555555-5555-5555-5555-555555555555', 'CV Maju Jaya Abadi', 'SUP-002', '0215555678', 'sales@majujaya.com', 'Kawasan Pergudangan Pluit', 'Dewi Lestari', true)
-ON CONFLICT (id) DO NOTHING;
+  ('20000000-0000-0000-0000-000000000001', 'PT Indofood Sukses Makmur', 'SUP-001', '021-5795-8822', 'supplier@indofood.com', 'Jakarta', 'Bpk. Salim', true),
+  ('20000000-0000-0000-0000-000000000002', 'PT Wings Surya', 'SUP-002', '031-8431-234', 'supplier@wings.com', 'Surabaya', 'Ibu Rahma', true),
+  ('20000000-0000-0000-0000-000000000003', 'CV Aneka Jaya', 'SUP-003', '0274-567890', 'anekajaya@email.com', 'Yogyakarta', 'Bpk. Joko', true)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  code = EXCLUDED.code;
 
+-- 12 Products with Grosir Tiers
 INSERT INTO public.products (id, category_id, name, sku, harga_beli, harga_jual, grosir_tiers, stok, min_stok, satuan, is_active) VALUES
-  ('66666666-6666-6666-6666-666666666666', '11111111-1111-1111-1111-111111111111', 'Kopi Susu Gula Aren 250ml', 'KOP-001', 8000, 15000, '[{"minQty": 10, "harga": 13000}]'::jsonb, 50, 5, 'botol', true),
-  ('77777777-7777-7777-7777-777777777777', '11111111-1111-1111-1111-111111111111', 'Roti Coklat Keju', 'ROT-001', 5000, 9000, '[{"minQty": 5, "harga": 8000}]'::jsonb, 30, 5, 'pcs', true),
-  ('88888888-8888-8888-8888-888888888888', '22222222-2222-2222-2222-222222222222', 'Sabun Cuci Piring 750ml', 'SBN-001', 10000, 14500, '[]'::jsonb, 40, 10, 'pouch', true),
-  ('99999999-9999-9999-9999-999999999999', '33333333-3333-3333-3333-333333333333', 'Buku Tulis 58 Lembar', 'BKU-001', 3000, 5000, '[{"minQty": 10, "harga": 4500}]'::jsonb, 100, 20, 'buku', true)
-ON CONFLICT (id) DO NOTHING;
+  ('30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Indomie Goreng', 'MKN-001', 2500, 3500, '[{"minQty": 40, "harga": 3200}]'::jsonb, 100, 20, 'pcs', true),
+  ('30000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', 'Chitato Original 68g', 'MKN-002', 8000, 11000, '[{"minQty": 10, "harga": 10000}]'::jsonb, 50, 10, 'pcs', true),
+  ('30000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', 'Roti Sari Roti Tawar', 'MKN-003', 12000, 15000, '[]'::jsonb, 30, 5, 'pcs', true),
+  ('30000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000002', 'Aqua 600ml', 'MNM-001', 2000, 3000, '[{"minQty": 24, "harga": 2600}]'::jsonb, 200, 50, 'botol', true),
+  ('30000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', 'Teh Pucuk Harum 350ml', 'MNM-002', 2500, 4000, '[{"minQty": 24, "harga": 3500}]'::jsonb, 80, 20, 'botol', true),
+  ('30000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000002', 'Coca Cola 390ml', 'MNM-003', 4000, 6000, '[{"minQty": 12, "harga": 5200}]'::jsonb, 60, 15, 'botol', true),
+  ('30000000-0000-0000-0000-000000000007', '10000000-0000-0000-0000-000000000003', 'Sabun Cuci Sunlight 800ml', 'KBR-001', 10000, 14000, '[]'::jsonb, 40, 10, 'botol', true),
+  ('30000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000003', 'Pewangi So Klin 900ml', 'KBR-002', 12000, 16000, '[]'::jsonb, 35, 8, 'botol', true),
+  ('30000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000004', 'Beras Premium 5kg', 'SMB-001', 55000, 65000, '[]'::jsonb, 25, 5, 'karung', true),
+  ('30000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000004', 'Gula Pasir 1kg', 'SMB-002', 12000, 15000, '[{"minQty": 10, "harga": 14000}]'::jsonb, 40, 10, 'kg', true),
+  ('30000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000004', 'Minyak Goreng Bimoli 2L', 'SMB-003', 28000, 34000, '[{"minQty": 6, "harga": 32000}]'::jsonb, 20, 5, 'botol', true),
+  ('30000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000005', 'Pulpen Standard AE7', 'ATK-001', 2000, 3500, '[{"minQty": 12, "harga": 3000}]'::jsonb, 3, 10, 'pcs', true)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  sku = EXCLUDED.sku,
+  harga_beli = EXCLUDED.harga_beli,
+  harga_jual = EXCLUDED.harga_jual,
+  grosir_tiers = EXCLUDED.grosir_tiers,
+  stok = EXCLUDED.stok,
+  min_stok = EXCLUDED.min_stok;
+
+-- Initial Purchase
+INSERT INTO public.purchases (
+  id, invoice_number, supplier_id, user_id, tanggal, total, status, keterangan
+) VALUES (
+  '40000000-0000-0000-0000-000000000001',
+  'PO-20260901-0001',
+  '20000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000001',
+  '2026-09-01',
+  250000,
+  'received',
+  'Pembelian rutin Indomie'
+) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.purchase_items (
+  id, purchase_id, product_id, qty, harga, subtotal
+) VALUES (
+  '50000000-0000-0000-0000-000000000001',
+  '40000000-0000-0000-0000-000000000001',
+  '30000000-0000-0000-0000-000000000001',
+  100,
+  2500,
+  250000
+) ON CONFLICT (id) DO NOTHING;
+
+-- Initial Stock Movement
+INSERT INTO public.stock_movements (
+  id, product_id, type, qty, stok_sebelum, stok_sesudah, reference_type, reference_id, keterangan, user_id
+) VALUES (
+  '60000000-0000-0000-0000-000000000001',
+  '30000000-0000-0000-0000-000000000001',
+  'in',
+  100,
+  0,
+  100,
+  'purchase',
+  '40000000-0000-0000-0000-000000000001',
+  'Pembelian PO-20260901-0001',
+  '00000000-0000-0000-0000-000000000001'
+) ON CONFLICT (id) DO NOTHING;
+
