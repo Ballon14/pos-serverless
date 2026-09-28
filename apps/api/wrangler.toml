@@ -1,0 +1,15 @@
+name = "stockku-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+SUPABASE_URL = "http://localhost:54321"
+SUPABASE_ANON_KEY = "dummy-anon-key"
+DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:54322/postgres"
+
+# For production deployment:
+# Use `wrangler secret put SUPABASE_URL`
+# Use `wrangler secret put SUPABASE_SERVICE_ROLE_KEY`
+# Use `wrangler secret put DATABASE_URL`
