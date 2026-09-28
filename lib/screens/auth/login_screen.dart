@@ -148,7 +148,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
                         const Text(
-                          'StockKu',
+                          'Toko Mba Emi',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 24,
@@ -159,7 +159,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: 6),
                         const Text(
-                          'Sistem Kasir & Manajemen Inventori Serverless',
+                          'Sistem Point of Sale (POS) & Manajemen Stok',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,

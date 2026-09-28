@@ -1,9 +1,9 @@
-# StockKu - AI Agent Instructions
+# Toko Mba Emi - AI Agent Instructions
 
-This file contains the core context, technology stack, and architectural guidelines for AI coding agents contributing to the **StockKu** repository.
+This file contains the core context, technology stack, and architectural guidelines for AI coding agents contributing to the **Toko Mba Emi** repository.
 
 ## 🎯 Project Overview
-StockKu is a modern, responsive multi-platform Point of Sale (POS) and Inventory Management System built with **Flutter** (Web, Android, iOS) and powered by **Firebase Realtime Database** (`https://possystem-6b4b7-default-rtdb.asia-southeast1.firebasedatabase.app/`). It is designed to be visually premium, fast, and serverless-first — running entirely on client devices and edge infrastructure with zero self-hosted servers.
+Toko Mba Emi is a modern, responsive multi-platform Point of Sale (POS) and Inventory Management System built with **Flutter** (Web, Android, iOS) and powered by **Firebase Realtime Database** (`https://possystem-6b4b7-default-rtdb.asia-southeast1.firebasedatabase.app/`). It is designed to be visually premium, fast, and serverless-first — running entirely on client devices and edge infrastructure with zero self-hosted servers.
 
 **Key Features:**
 - **POS / Kasir**: Real-time cart management via Riverpod, barcode scanner support (physical scanner for Web / camera scanner for Mobile via `mobile_scanner`), offline fallback with local storage (Hive) sync.
@@ -122,7 +122,7 @@ lib/
 - Cart and session state are saved locally with `Hive` so items survive accidental refresh or offline state.
 
 ### 3. UI / UX & Design Standards
-- Premium, modern aesthetic matching StockKu branding:
+- Premium, modern aesthetic matching Toko Mba Emi branding:
   - Primary: `Color(0xFF6366F1)` (Indigo)
   - Secondary: `Color(0xFF9333EA)` (Purple)
   - Success/Money: `Color(0xFF10B981)` (Emerald)

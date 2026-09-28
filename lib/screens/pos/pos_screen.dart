@@ -202,26 +202,45 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                           );
                         }
 
-                        return GridView.builder(
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: isWide ? 4 : 3,
-                            childAspectRatio: 0.85,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
-                          itemCount: products.length,
-                          itemBuilder: (context, index) {
-                            final product = products[index];
-                            return _ProductCard(
-                              product: product,
-                              onTap: () {
-                                if (product.stok <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Stok ${product.name} telah habis!')),
-                                  );
-                                  return;
-                                }
-                                ref.read(cartProvider.notifier).addItem(product);
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final width = constraints.maxWidth;
+                            final int crossAxisCount;
+                            final double childAspectRatio;
+
+                            if (width >= 800) {
+                              crossAxisCount = 4;
+                              childAspectRatio = 0.95;
+                            } else if (width >= 520) {
+                              crossAxisCount = 3;
+                              childAspectRatio = 0.90;
+                            } else {
+                              crossAxisCount = 2;
+                              childAspectRatio = 0.92;
+                            }
+
+                            return GridView.builder(
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                childAspectRatio: childAspectRatio,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                              itemCount: products.length,
+                              itemBuilder: (context, index) {
+                                final product = products[index];
+                                return _ProductCard(
+                                  product: product,
+                                  onTap: () {
+                                    if (product.stok <= 0) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Stok ${product.name} telah habis!')),
+                                      );
+                                      return;
+                                    }
+                                    ref.read(cartProvider.notifier).addItem(product);
+                                  },
+                                );
                               },
                             );
                           },
@@ -389,11 +408,15 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                           children: [
                             Icon(isLocked ? Icons.lock_clock_rounded : Icons.payment_rounded, size: 20),
                             const SizedBox(width: 8),
-                            Text(
-                              isLocked
-                                  ? 'Clock In Wajib Sebelum Transaksi'
-                                  : 'Bayar (${AppFormatters.formatRupiah(cart.grandTotal)})',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            Flexible(
+                              child: Text(
+                                isLocked
+                                    ? 'Clock In Wajib Sebelum Transaksi'
+                                    : 'Bayar (${AppFormatters.formatRupiah(cart.grandTotal)})',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
@@ -489,14 +512,22 @@ class _ProductCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    AppFormatters.formatRupiah(product.hargaJual),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                  Expanded(
+                    child: FittedBox(
+                      alignment: Alignment.centerLeft,
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        AppFormatters.formatRupiah(product.hargaJual),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                        maxLines: 1,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 6),
                   CircleAvatar(
                     radius: 14,
                     backgroundColor: AppColors.primary.withValues(alpha: 0.15),

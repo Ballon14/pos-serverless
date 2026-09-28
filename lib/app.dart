@@ -3,15 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/router.dart';
 import 'config/theme.dart';
 
-class StockKuApp extends ConsumerWidget {
-  const StockKuApp({super.key});
+class TokoMbaEmiApp extends ConsumerWidget {
+  const TokoMbaEmiApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'StockKu - POS & Inventory',
+      title: 'Toko Mba Emi - POS & Inventory',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
@@ -20,3 +20,5 @@ class StockKuApp extends ConsumerWidget {
     );
   }
 }
+
+typedef StockKuApp = TokoMbaEmiApp;

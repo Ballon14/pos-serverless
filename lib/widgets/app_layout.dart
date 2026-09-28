@@ -40,7 +40,7 @@ class AppLayout extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'StockKu',
+          'Toko Mba Emi',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         elevation: 0,

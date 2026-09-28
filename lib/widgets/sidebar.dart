@@ -140,15 +140,15 @@ class AppSidebar extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'StockKu',
+                      'Toko Mba Emi',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.bold,
                         letterSpacing: -0.5,
                       ),
                     ),
                     Text(
-                      'Toko Mba Emi POS',
+                      'Point of Sale & Stok',
                       style: TextStyle(
                         fontSize: 11,
                         color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
@@ -255,7 +255,7 @@ class AppSidebar extends ConsumerWidget {
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: const Text('Keluar dari Akun?'),
-                          content: const Text('Apakah Anda yakin ingin keluar dari StockKu?'),
+                          content: const Text('Apakah Anda yakin ingin keluar dari Toko Mba Emi?'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),

@@ -80,8 +80,20 @@ class DashboardScreen extends ConsumerWidget {
             // Stat Cards Grid
             LayoutBuilder(
               builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 800;
-                final crossAxisCount = isWide ? 4 : 2;
+                final width = constraints.maxWidth;
+                final int crossAxisCount;
+                final double childAspectRatio;
+
+                if (width >= 1050) {
+                  crossAxisCount = 4;
+                  childAspectRatio = 1.35;
+                } else if (width >= 600) {
+                  crossAxisCount = 2;
+                  childAspectRatio = 1.6;
+                } else {
+                  crossAxisCount = 2;
+                  childAspectRatio = 1.25;
+                }
 
                 return GridView.count(
                   crossAxisCount: crossAxisCount,
@@ -89,7 +101,7 @@ class DashboardScreen extends ConsumerWidget {
                   mainAxisSpacing: 16,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: isWide ? 1.7 : 1.3,
+                  childAspectRatio: childAspectRatio,
                   children: [
                     // Card 1: Penjualan Hari Ini
                     _StatCard(
@@ -275,7 +287,7 @@ class _StatCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -283,36 +295,45 @@ class _StatCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: iconBgColor,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, color: iconColor, size: 20),
+                  child: Icon(icon, color: iconColor, size: 18),
                 ),
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.5,
+                FittedBox(
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                    maxLines: 1,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 if (subtitle.isNotEmpty) ...[
                   const SizedBox(height: 2),

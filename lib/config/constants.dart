@@ -1,8 +1,8 @@
-/// Application-wide constants for StockKu POS
+/// Application-wide constants for Toko Mba Emi POS
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'StockKu';
+  static const String appName = 'Toko Mba Emi';
   static const String appVersion = '1.0.0';
 
   // Firebase Realtime Database Configuration
