@@ -18,6 +18,8 @@ node_modules/
 dist/
 .turbo/
 .wrangler/
+.dev.vars
+.dev.vars.*
 .pnpm-store/
 coverage/
 /public/build
