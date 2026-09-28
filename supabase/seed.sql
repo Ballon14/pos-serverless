@@ -19,20 +19,30 @@ INSERT INTO auth.users (
   created_at,
   updated_at,
   role,
-  aud
+  aud,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change_token_current,
+  email_change,
+  phone,
+  phone_change,
+  phone_change_token,
+  reauthentication_token
 ) VALUES
   (
     '00000000-0000-0000-0000-000000000001',
     '00000000-0000-0000-0000-000000000000',
     'admin@tokombaemi.com',
-    crypt('password', gen_salt('bf')),
+    crypt('password123', gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"name":"Administrator","role":"admin"}',
     NOW(),
     NOW(),
     'authenticated',
-    'authenticated'
+    'authenticated',
+    '', '', '', '', '', '', '', '', ''
   ),
   (
     '00000000-0000-0000-0000-000000000002',
@@ -45,7 +55,8 @@ INSERT INTO auth.users (
     NOW(),
     NOW(),
     'authenticated',
-    'authenticated'
+    'authenticated',
+    '', '', '', '', '', '', '', '', ''
   ),
   (
     '00000000-0000-0000-0000-000000000003',
@@ -58,9 +69,49 @@ INSERT INTO auth.users (
     NOW(),
     NOW(),
     'authenticated',
-    'authenticated'
+    'authenticated',
+    '', '', '', '', '', '', '', '', ''
   )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  confirmation_token = '',
+  recovery_token = '',
+  email_change_token_new = '',
+  email_change_token_current = '',
+  email_change = '',
+  reauthentication_token = '',
+  phone = '',
+  phone_change = '',
+  phone_change_token = '';
+
+-- Identities untuk Supabase GoTrue Auth Service
+INSERT INTO auth.identities (
+  id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+) VALUES
+  (
+    gen_random_uuid(),
+    '00000000-0000-0000-0000-000000000001',
+    jsonb_build_object('sub', '00000000-0000-0000-0000-000000000001', 'email', 'admin@tokombaemi.com', 'email_verified', true),
+    'email',
+    '00000000-0000-0000-0000-000000000001',
+    NOW(), NOW(), NOW()
+  ),
+  (
+    gen_random_uuid(),
+    '00000000-0000-0000-0000-000000000002',
+    jsonb_build_object('sub', '00000000-0000-0000-0000-000000000002', 'email', 'kasir1@tokombaemi.com', 'email_verified', true),
+    'email',
+    '00000000-0000-0000-0000-000000000002',
+    NOW(), NOW(), NOW()
+  ),
+  (
+    gen_random_uuid(),
+    '00000000-0000-0000-0000-000000000003',
+    jsonb_build_object('sub', '00000000-0000-0000-0000-000000000003', 'email', 'kasir2@tokombaemi.com', 'email_verified', true),
+    'email',
+    '00000000-0000-0000-0000-000000000003',
+    NOW(), NOW(), NOW()
+  )
+ON CONFLICT (provider_id, provider) DO NOTHING;
 
 -- Pastikan tabel public.users juga terisi
 INSERT INTO public.users (id, name, email, role, is_active) VALUES

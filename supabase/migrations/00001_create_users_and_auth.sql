@@ -14,14 +14,17 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 -- Trigger to sync user creation from Supabase Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
 BEGIN
   INSERT INTO public.users (id, name, email, role, is_active)
   VALUES (
     new.id,
     COALESCE(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
     new.email,
-    COALESCE(new.raw_user_meta_data->>'role', 'kasir'),
+    COALESCE(new.raw_user_meta_data->>'role', CASE WHEN new.email ILIKE '%admin%' THEN 'admin' ELSE 'kasir' END),
     true
   )
   ON CONFLICT (id) DO UPDATE
@@ -29,12 +32,15 @@ BEGIN
     name = EXCLUDED.name,
     email = EXCLUDED.email;
   RETURN new;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
-  AFTER INSERT OR UPDATE ON auth.users
+  AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Indexes
